@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, ExtractionError, NotFoundError
 from app.core.logging import configure_logging
 
 configure_logging(log_level=settings.LOG_LEVEL)
@@ -47,6 +47,11 @@ def _register_exception_handlers(app: FastAPI) -> None:
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
         logger.warning("conflict", path=str(request.url), detail=exc.detail)
         return JSONResponse(status_code=409, content={"detail": exc.detail})
+
+    @app.exception_handler(ExtractionError)
+    async def extraction_handler(request: Request, exc: ExtractionError) -> JSONResponse:
+        logger.warning("extraction_error", path=str(request.url), detail=exc.detail)
+        return JSONResponse(status_code=422, content={"detail": exc.detail})
 
 
 def _register_routers(app: FastAPI) -> None:

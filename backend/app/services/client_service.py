@@ -1,5 +1,7 @@
 """Service layer for Client operations."""
 
+from __future__ import annotations
+
 import uuid
 
 import structlog

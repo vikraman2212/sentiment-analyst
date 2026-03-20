@@ -18,6 +18,7 @@ from app.repositories.client import ClientRepository
 from app.repositories.interaction import InteractionRepository
 from app.schemas.audio import AudioUploadResponse
 from app.schemas.interaction import InteractionCreate
+from app.services.extraction import ExtractionError, extraction_service
 from app.services.transcription import TranscriptionError, transcription_service
 
 logger = structlog.get_logger(__name__)
@@ -95,11 +96,31 @@ async def upload_audio(
             raw_transcript=transcript,
         )
     )
-    log.info("audio_upload_complete", interaction_id=str(interaction.id))
+    log.info("audio_upload_interaction_saved", interaction_id=str(interaction.id))
 
-    # extracted_tags_count is 0 here; Ollama extraction (issue #11) will update this
+    # 5 — Extract context tags via Ollama (best-effort; failure is non-fatal)
+    extracted_tags_count = 0
+    try:
+        extracted_tags_count = await extraction_service.extract(
+            transcript=transcript,
+            client_id=client_id,
+            interaction_id=interaction.id,
+            db=db,
+        )
+    except ExtractionError as exc:
+        log.warning(
+            "audio_upload_extraction_degraded",
+            error=exc.detail,
+            interaction_id=str(interaction.id),
+        )
+
+    log.info(
+        "audio_upload_complete",
+        interaction_id=str(interaction.id),
+        extracted_tags=extracted_tags_count,
+    )
     return AudioUploadResponse(
         status="success",
-        extracted_tags_count=0,
+        extracted_tags_count=extracted_tags_count,
         interaction_id=interaction.id,
     )
