@@ -1,14 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     DATABASE_URL: str = (
         "postgresql+psycopg://admin:localpassword@localhost:5432/advisor_db"
     )
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    LOG_LEVEL: str = "INFO"  # Override via LOG_LEVEL env var in production
 
 
 settings = Settings()
