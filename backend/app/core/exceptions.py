@@ -19,3 +19,11 @@ class ConflictError(Exception):
     def __init__(self, detail: str = "Resource conflict") -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class ExtractionError(Exception):
+    """Raised when Ollama fails to return valid structured JSON after retries."""
+
+    def __init__(self, detail: str = "Extraction failed") -> None:
+        self.detail = detail
+        super().__init__(detail)

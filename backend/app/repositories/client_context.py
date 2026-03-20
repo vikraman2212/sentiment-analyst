@@ -33,6 +33,24 @@ class ClientContextRepository:
         await self._db.refresh(context)
         return context
 
+    async def bulk_create(
+        self, payloads: list[ClientContextCreate]
+    ) -> list[ClientContext]:
+        """Persist multiple context tags in a single transaction.
+
+        Args:
+            payloads: List of tag creation payloads.
+
+        Returns:
+            List of hydrated ClientContext instances.
+        """
+        contexts = [ClientContext(**p.model_dump()) for p in payloads]
+        self._db.add_all(contexts)
+        await self._db.commit()
+        for ctx in contexts:
+            await self._db.refresh(ctx)
+        return contexts
+
     async def delete(self, context: ClientContext) -> None:
         """Delete the context tag record."""
         await self._db.delete(context)
