@@ -19,7 +19,7 @@ from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
-_MODEL_SIZE = getattr(settings, "WHISPER_MODEL", "base.en")
+_MODEL_SIZE = settings.WHISPER_MODEL
 
 
 class TranscriptionError(Exception):
