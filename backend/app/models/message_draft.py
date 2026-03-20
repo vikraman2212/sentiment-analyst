@@ -9,7 +9,7 @@ DRAFT_STATUSES = ("pending", "sent")
 
 
 class MessageDraft(Base):
-    __tablename__ = "message_drafts"
+    __tablename__ = "message_draft"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4

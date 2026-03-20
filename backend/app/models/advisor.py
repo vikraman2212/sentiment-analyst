@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class Advisor(Base):
-    __tablename__ = "advisors"
+    __tablename__ = "advisor"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4

@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class FinancialProfile(Base):
-    __tablename__ = "financial_profiles"
+    __tablename__ = "financial_profile"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4

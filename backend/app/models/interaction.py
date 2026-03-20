@@ -8,7 +8,7 @@ from app.db.base import Base
 
 
 class Interaction(Base):
-    __tablename__ = "interactions"
+    __tablename__ = "interaction"
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4
