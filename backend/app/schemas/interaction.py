@@ -8,6 +8,7 @@ class InteractionCreate(BaseModel):
     client_id: uuid.UUID
     type: str = "voice_memo"
     raw_transcript: str | None = None
+    audio_file_key: str | None = None
 
 
 class InteractionResponse(BaseModel):
