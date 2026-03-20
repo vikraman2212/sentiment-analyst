@@ -1,5 +1,8 @@
 """FastAPI application factory and global exception handlers."""
 
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +17,17 @@ configure_logging(log_level=settings.LOG_LEVEL)
 logger = structlog.get_logger(__name__)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    from app.services.storage import StorageError, storage_service
+
+    try:
+        await storage_service.ensure_bucket_exists()
+    except StorageError as exc:
+        logger.error("startup_storage_unavailable", error=exc.detail)
+    yield
+
+
 def create_app() -> FastAPI:
     """Construct and configure the FastAPI application."""
     app = FastAPI(
@@ -21,6 +35,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=_lifespan,
     )
 
     # Allow all origins — local Wi-Fi Flutter client on same network
