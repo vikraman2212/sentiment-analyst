@@ -25,6 +25,10 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await storage_service.ensure_bucket_exists()
     except StorageError as exc:
         logger.error("startup_storage_unavailable", error=exc.detail)
+
+    from app.core.opensearch import ensure_llm_audits_index
+
+    await ensure_llm_audits_index()
     yield
 
 

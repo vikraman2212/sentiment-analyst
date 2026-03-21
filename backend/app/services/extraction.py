@@ -9,8 +9,11 @@ Usage::
     count = await extraction_service.extract(transcript, client_id, interaction_id)
 """
 
+import asyncio
 import json
+import time
 import uuid
+from dataclasses import dataclass
 
 import httpx
 import structlog
@@ -21,6 +24,7 @@ from app.core.config import settings
 from app.core.exceptions import ExtractionError
 from app.repositories.client_context import ClientContextRepository
 from app.schemas.client_context import ClientContextCreate, ContextCategory
+from app.services.llm_audit import llm_audit_logger, make_audit_event
 
 # Lenient parsing model — category is unconstrained str so that invalid
 # categories from the LLM are soft-skipped rather than treated as a JSON error.
@@ -35,6 +39,17 @@ class _RawExtractionResult(BaseModel):
 logger = structlog.get_logger(__name__)
 
 _VALID_CATEGORIES: set[str] = set(ContextCategory.__args__)  # type: ignore[attr-defined]
+
+
+@dataclass
+class _OllamaResult:
+    """Raw output captured from a single Ollama /api/generate call."""
+
+    response: str
+    prompt: str
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    latency_ms: float
 
 _EXTRACTION_PROMPT_TEMPLATE = """\
 You are an AI assistant helping a financial advisor extract structured notes from a client meeting transcript.
@@ -98,13 +113,45 @@ class ExtractionService:
         )
         log.info("extraction_started")
 
-        raw_response = await self._call_ollama(transcript, log)
-        tags = self._parse_and_validate(raw_response, log, attempt=1)
+        result1 = await self._call_ollama(transcript, log)
+        tags = self._parse_and_validate(result1.response, log, attempt=1)
+        asyncio.create_task(
+            llm_audit_logger.log(
+                make_audit_event(
+                    pipeline="extraction",
+                    client_id=client_id,
+                    model=settings.OLLAMA_MODEL,
+                    prompt=result1.prompt,
+                    response=result1.response,
+                    status="success" if tags is not None else "error",
+                    latency_ms=result1.latency_ms,
+                    prompt_tokens=result1.prompt_tokens,
+                    completion_tokens=result1.completion_tokens,
+                    error=None if tags is not None else "invalid_json_attempt_1",
+                )
+            )
+        )
 
         if tags is None:
             log.warning("extraction_retry", reason="invalid_json_first_attempt")
-            raw_response = await self._call_ollama(transcript, log)
-            tags = self._parse_and_validate(raw_response, log, attempt=2)
+            result2 = await self._call_ollama(transcript, log)
+            tags = self._parse_and_validate(result2.response, log, attempt=2)
+            asyncio.create_task(
+                llm_audit_logger.log(
+                    make_audit_event(
+                        pipeline="extraction",
+                        client_id=client_id,
+                        model=settings.OLLAMA_MODEL,
+                        prompt=result2.prompt,
+                        response=result2.response,
+                        status="success" if tags is not None else "error",
+                        latency_ms=result2.latency_ms,
+                        prompt_tokens=result2.prompt_tokens,
+                        completion_tokens=result2.completion_tokens,
+                        error=None if tags is not None else "invalid_json_attempt_2",
+                    )
+                )
+            )
 
         if tags is None:
             raise ExtractionError(
@@ -124,8 +171,11 @@ class ExtractionService:
         self,
         transcript: str,
         log: structlog.BoundLogger,
-    ) -> str:
-        """POST to Ollama /api/generate and return the raw response string."""
+    ) -> _OllamaResult:
+        """POST to Ollama /api/generate and return an _OllamaResult.
+
+        Captures end-to-end latency and token counts from the response body.
+        """
         prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
         payload = {
             "model": settings.OLLAMA_MODEL,
@@ -134,6 +184,7 @@ class ExtractionService:
             "stream": False,
         }
         log.info("ollama_request_started", model=settings.OLLAMA_MODEL)
+        start = time.monotonic()
         try:
             async with httpx.AsyncClient(
                 base_url=settings.OLLAMA_BASE_URL,
@@ -144,11 +195,27 @@ class ExtractionService:
         except httpx.HTTPError as exc:
             log.error("ollama_http_error", error=str(exc), exc_info=True)
             raise ExtractionError(f"Ollama request failed: {exc}") from exc
+        finally:
+            latency_ms = (time.monotonic() - start) * 1_000
 
         body = response.json()
         raw = body.get("response", "")
-        log.info("ollama_response_received", chars=len(raw))
-        return raw
+        prompt_tokens: int | None = body.get("prompt_eval_count")
+        completion_tokens: int | None = body.get("eval_count")
+        log.info(
+            "ollama_response_received",
+            chars=len(raw),
+            latency_ms=round(latency_ms, 1),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+        return _OllamaResult(
+            response=raw,
+            prompt=prompt,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+        )
 
     def _parse_and_validate(
         self,
