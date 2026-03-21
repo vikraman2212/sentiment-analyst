@@ -1,6 +1,7 @@
 """Repository for Client CRUD operations."""
 
 import uuid
+from datetime import date
 
 import structlog
 from sqlalchemy import select
@@ -34,6 +35,31 @@ class ClientRepository:
             select(Client)
             .where(Client.advisor_id == advisor_id)
             .order_by(Client.last_name, Client.first_name)
+        )
+        return list(result.scalars().all())
+
+    async def list_needing_review(
+        self, advisor_id: uuid.UUID, cutoff: date
+    ) -> list[Client]:
+        """Return clients whose next review date is on or before the cutoff.
+
+        Clients without a next_review_date are excluded silently.
+
+        Args:
+            advisor_id: Filter to this advisor's clients.
+            cutoff: Upper bound for next_review_date (inclusive).
+
+        Returns:
+            Clients ordered by next_review_date ascending.
+        """
+        result = await self._db.execute(
+            select(Client)
+            .where(
+                Client.advisor_id == advisor_id,
+                Client.next_review_date.isnot(None),
+                Client.next_review_date <= cutoff,
+            )
+            .order_by(Client.next_review_date)
         )
         return list(result.scalars().all())
 
