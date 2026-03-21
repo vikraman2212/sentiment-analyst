@@ -1,17 +1,43 @@
-# assistant
+# Assistant App
 
-A new Flutter project.
+Flutter client for the Sentiment Analyst local workflow.
 
-## Getting Started
+For full-stack local setup, startup order, backend modes, and shared commands, start with the root [README.md](../../README.md).
 
-This project is a starting point for a Flutter application.
+## App Commands
 
-A few resources to get you started if this is your first Flutter project:
+From the repository root:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+make frontend-install
+make frontend-run
+make frontend-analyze
+make frontend-test
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+From this directory directly:
+
+```bash
+flutter pub get
+flutter run
+flutter analyze
+flutter test
+```
+
+## Backend Base URL
+
+The app defaults to `http://localhost:8000` via `lib/core/config.dart`.
+
+Use these values depending on where the app runs:
+
+- iOS simulator on the same Mac: `http://localhost:8000`
+- Android emulator: `http://10.0.2.2:8000`
+- Physical device on local Wi-Fi: `http://<your-mac-ip>:8000`
+
+The app stores the selected base URL in SharedPreferences using the `api_base_url` key.
+
+## Requirements
+
+- Flutter SDK compatible with `pubspec.yaml`
+- A running backend at port `8000`
+- Local infrastructure and Ollama started as described in the root README
