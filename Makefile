@@ -6,7 +6,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs backend-venv backend-install backend-migrate backend-run backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs backend-venv backend-install backend-migrate backend-run backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
@@ -64,7 +64,10 @@ frontend-install:
 	cd $(FRONTEND_DIR) && flutter pub get
 
 frontend-run:
-	cd $(FRONTEND_DIR) && flutter run
+	cd $(FRONTEND_DIR) && flutter run -d macos
+
+frontend-run-web:
+	cd $(FRONTEND_DIR) && flutter run -d chrome
 
 frontend-analyze:
 	cd $(FRONTEND_DIR) && flutter analyze
