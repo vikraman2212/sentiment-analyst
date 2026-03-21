@@ -1,36 +1,55 @@
 # Local Infrastructure
 
-This folder contains local infrastructure for the MVP.
+This folder contains the Docker-managed local infrastructure for the MVP.
 
-## What runs here
+For the full startup flow, use the root [README.md](../README.md). This file focuses only on infra-specific details.
 
-- PostgreSQL (Docker)
-- OpenSearch (Docker, custom build from `infra/opensearch/Dockerfile`)
-- OpenSearch Dashboards (Docker)
+## Services In Compose
 
-## What does not run here
+- PostgreSQL
+- OpenSearch
+- OpenSearch Dashboards
+- MinIO
 
-- Ollama is intentionally not defined in this Compose file because it is already running locally on your machine.
+## Service Not In Compose
 
-## Start full infra stack
+- Ollama is intentionally not defined here. It must run on the host machine at `http://localhost:11434`.
 
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
+## Start Infra
 
-## Start only OpenSearch services
-
-```bash
-docker compose -f infra/docker-compose.yml up -d opensearch opensearch-dashboards
-```
-
-## Stop database
+From the repository root:
 
 ```bash
-docker compose -f infra/docker-compose.yml down
+make infra-up
 ```
 
-## Connection details
+Direct Compose command:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file infra/.env.example up -d
+```
+
+## Stop Infra
+
+```bash
+make infra-down
+```
+
+Direct Compose command:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file infra/.env.example down
+```
+
+## Stream Logs
+
+```bash
+make infra-logs
+```
+
+## Connection Details
+
+### PostgreSQL
 
 - Host: `localhost`
 - Port: `5432`
@@ -38,25 +57,36 @@ docker compose -f infra/docker-compose.yml down
 - User: `admin`
 - Password: `localpassword`
 
-## OpenSearch endpoints
+### OpenSearch
 
-- OpenSearch API: `http://localhost:9200`
-- OpenSearch Dashboards: `http://localhost:5601`
+- API: `http://localhost:9200`
+- Dashboards: `http://localhost:5601`
+
+### MinIO
+
+- API: `http://localhost:9000`
+- Console: `http://localhost:9001`
+- Access key: `minioadmin`
+- Secret key: `minioadmin`
 
 ## Notes
 
-- OpenSearch security plugin is disabled for local development parity with your reference setup.
-- If port `5432` is already in use, start PostgreSQL with an alternate host port:
-  - `POSTGRES_PORT=5433 docker compose -f infra/docker-compose.yml up -d postgres`
+- OpenSearch security is disabled for local development.
+- If port `5432` is already in use, override it when starting Compose:
 
-## App environment hints
+```bash
+POSTGRES_PORT=5433 docker compose -f infra/docker-compose.yml --env-file infra/.env.example up -d postgres
+```
 
-- Backend running on host machine:
-  - `DATABASE_URL=postgresql+psycopg://admin:localpassword@localhost:5432/advisor_db`
-  - `OLLAMA_BASE_URL=http://localhost:11434`
-- Backend running in Docker:
-  - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
+## Backend Networking Hints
 
+If the backend runs on the host machine:
 
-# LaunchDaemon (system install)
-sudo launchctl disable system/org.postgresql.postgres
+- `DATABASE_URL=postgresql+psycopg://admin:localpassword@localhost:5432/advisor_db`
+- `MINIO_ENDPOINT=http://localhost:9000`
+- `OLLAMA_BASE_URL=http://localhost:11434`
+
+If the backend runs in Docker:
+
+- the hostnames in `DATABASE_URL`, `MINIO_ENDPOINT`, and `OLLAMA_BASE_URL` should use `host.docker.internal`
+- the root Makefile derives these Docker-safe values from `backend/.env`
