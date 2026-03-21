@@ -8,11 +8,8 @@ class ApiService {
   ApiService({ApiClient? client}) : _client = client ?? ApiClient();
 
   Future<List<Client>> getClients() async {
-    final data = await _client.get('/api/v1/clients');
-    final list = data['clients'] as List<dynamic>;
-    return list
-        .map((e) => Client.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final list = await _client.getList('/api/v1/clients');
+    return list.map((e) => Client.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<Map<String, dynamic>> presignUpload({
@@ -40,9 +37,7 @@ class ApiService {
   Future<List<Draft>> getPendingDrafts() async {
     final data = await _client.get('/api/v1/drafts/pending');
     final list = data['drafts'] as List<dynamic>;
-    return list
-        .map((e) => Draft.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return list.map((e) => Draft.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<void> approveDraft(String draftId) async {
