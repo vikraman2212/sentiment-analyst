@@ -5,7 +5,9 @@ import uuid
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.client import Client
 from app.models.message_draft import MessageDraft
 from app.schemas.message_draft import MessageDraftCreate, MessageDraftStatusUpdate
 
@@ -27,6 +29,17 @@ class MessageDraftRepository:
         """Return all drafts for the given client, newest first."""
         result = await self._db.execute(
             select(MessageDraft).where(MessageDraft.client_id == client_id)
+        )
+        return list(result.scalars().all())
+
+    async def list_all_pending(self) -> list[MessageDraft]:
+        """Return all pending drafts with client and context tags eager-loaded."""
+        result = await self._db.execute(
+            select(MessageDraft)
+            .where(MessageDraft.status == "pending")
+            .options(
+                selectinload(MessageDraft.client).selectinload(Client.context_tags)
+            )
         )
         return list(result.scalars().all())
 

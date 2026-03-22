@@ -8,10 +8,21 @@ from app.schemas.message_draft import (
     MessageDraftCreate,
     MessageDraftResponse,
     MessageDraftStatusUpdate,
+    PendingDraftResponse,
 )
 from app.services.message_draft_service import MessageDraftService
 
 router = APIRouter(tags=["message-drafts"])
+
+
+@router.get(
+    "/drafts/pending",
+    response_model=list[PendingDraftResponse],
+)
+async def list_pending_drafts(
+    db: AsyncSession = Depends(get_db),
+) -> list[PendingDraftResponse]:
+    return await MessageDraftService(db).list_all_pending()
 
 
 @router.post(
