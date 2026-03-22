@@ -32,5 +32,14 @@ class Settings(BaseSettings):
     MINIO_BUCKET: str = "audio-uploads"
     MINIO_PRESIGN_EXPIRY: int = 300  # seconds
 
+    # Scheduler
+    SCHEDULER_TIMEZONE: str = "Australia/Sydney"
+    SCHEDULER_HOUR: int = 8  # 24-hour clock; when to fire the daily generation job
+    SCHEDULER_SECRET: str = "change-me-in-production"  # X-Scheduler-Secret header
+
+    # Message queue
+    QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"
+    REDIS_URL: str = "redis://localhost:6379"
+
 
 settings = Settings()
