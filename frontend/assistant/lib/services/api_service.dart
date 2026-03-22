@@ -40,9 +40,8 @@ class ApiService {
   }
 
   Future<void> updateDraftStatus(String draftId, String status) async {
-    await _client.patch(
-      '/api/v1/message-drafts/$draftId/status',
-      {'status': status},
-    );
+    await _client.patch('/api/v1/message-drafts/$draftId/status', {
+      'status': status,
+    });
   }
 }
