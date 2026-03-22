@@ -57,6 +57,39 @@ class MessageDraftService:
         log.info("message_draft_list_complete", count=len(drafts))
         return drafts
 
+    async def find_pending_by_client(self, client_id: uuid.UUID) -> MessageDraft | None:
+        """Return the pending draft for the given client, or None.
+
+        Args:
+            client_id: Client to look up.
+
+        Returns:
+            The pending ``MessageDraft`` instance, or ``None`` if none exists.
+        """
+        log = logger.bind(client_id=str(client_id))
+        log.info("message_draft_find_pending_started")
+        draft = await self._repo.find_pending_by_client(client_id)
+        log.info("message_draft_find_pending_complete", found=draft is not None)
+        return draft
+
+    async def delete(self, draft_id: uuid.UUID) -> None:
+        """Permanently delete a message draft.
+
+        Args:
+            draft_id: ID of the draft to delete.
+
+        Raises:
+            NotFoundError: If the draft does not exist.
+        """
+        log = logger.bind(draft_id=str(draft_id))
+        log.info("message_draft_delete_started")
+        draft = await self._repo.get_by_id(draft_id)
+        if draft is None:
+            log.warning("message_draft_not_found")
+            raise NotFoundError(f"MessageDraft {draft_id} not found")
+        await self._repo.delete(draft)
+        log.info("message_draft_delete_complete")
+
     async def update_status(
         self, draft_id: uuid.UUID, payload: MessageDraftStatusUpdate
     ) -> MessageDraft:

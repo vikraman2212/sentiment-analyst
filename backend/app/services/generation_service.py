@@ -68,13 +68,22 @@ class GenerationService:
         self,
         client_id: uuid.UUID,
         trigger_type: str,
+        *,
+        force: bool = False,
     ) -> MessageDraft:
         """Generate a draft email for the given client and persist it.
+
+        If a pending draft already exists for this client and ``force`` is
+        ``False``, the existing draft is returned immediately without calling
+        the LLM.  When ``force`` is ``True`` the existing pending draft is
+        deleted before running the full generation pipeline.
 
         Args:
             client_id: UUID of the target client.
             trigger_type: Free-form label for what triggered this draft
                 (e.g. ``"review_due"``).
+            force: When ``True``, delete any existing pending draft and
+                regenerate rather than returning the cached one.
 
         Returns:
             The persisted ``MessageDraft`` ORM instance.
@@ -85,6 +94,14 @@ class GenerationService:
         """
         log = logger.bind(client_id=str(client_id), trigger_type=trigger_type)
         log.info("generation_started")
+
+        existing = await self._draft_svc.find_pending_by_client(client_id)
+        if existing is not None:
+            if not force:
+                log.info("generation_skipped_existing_pending", draft_id=str(existing.id))
+                return existing
+            log.info("generation_force_replacing", draft_id=str(existing.id))
+            await self._draft_svc.delete(existing.id)
 
         context = await self._context_svc.assemble(client_id)
 

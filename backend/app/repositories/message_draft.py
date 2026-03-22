@@ -38,6 +38,21 @@ class MessageDraftRepository:
         await self._db.refresh(draft)
         return draft
 
+    async def find_pending_by_client(self, client_id: uuid.UUID) -> MessageDraft | None:
+        """Return the single pending draft for the given client, or None."""
+        result = await self._db.execute(
+            select(MessageDraft).where(
+                MessageDraft.client_id == client_id,
+                MessageDraft.status == "pending",
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def delete(self, draft: MessageDraft) -> None:
+        """Permanently delete the given draft row."""
+        await self._db.delete(draft)
+        await self._db.commit()
+
     async def update_status(
         self, draft: MessageDraft, payload: MessageDraftStatusUpdate
     ) -> MessageDraft:

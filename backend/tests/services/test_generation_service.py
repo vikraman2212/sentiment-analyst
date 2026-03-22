@@ -62,6 +62,7 @@ def _make_service(
     provider_response: str | None = None,
     provider_side_effect: Exception | None = None,
     assembled_context: AssembledContext | None = None,
+    existing_pending_draft: MagicMock | None = None,
 ) -> tuple[GenerationService, AsyncMock, AsyncMock, AsyncMock]:
     """Build a GenerationService with all dependencies mocked.
 
@@ -85,6 +86,8 @@ def _make_service(
     mock_draft_svc.create = AsyncMock(
         return_value=_make_draft(provider_response or "Clean email body text.")
     )
+    mock_draft_svc.find_pending_by_client = AsyncMock(return_value=existing_pending_draft)
+    mock_draft_svc.delete = AsyncMock(return_value=None)
 
     service = GenerationService.__new__(GenerationService)
     service._provider = mock_provider
@@ -192,3 +195,78 @@ def test_normalize_clean_input_unchanged() -> None:
 def test_normalize_trims_whitespace() -> None:
     raw = "\n\n  Hi Jane.  \n\n"
     assert _normalize(raw) == "Hi Jane."
+
+
+# ---------------------------------------------------------------------------
+# Idempotency guard tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_returns_existing_pending_draft() -> None:
+    """When a pending draft exists and force=False, return it without calling the LLM."""
+    existing = _make_draft("Existing email body.")
+    service, mock_provider, mock_context_svc, mock_draft_svc = _make_service(
+        existing_pending_draft=existing
+    )
+
+    result = await service.generate(_CLIENT_ID, "review_due")
+
+    assert result is existing
+    mock_draft_svc.find_pending_by_client.assert_awaited_once_with(_CLIENT_ID)
+    mock_provider.complete.assert_not_awaited()
+    mock_context_svc.assemble.assert_not_awaited()
+    mock_draft_svc.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_generate_force_deletes_existing_and_regenerates() -> None:
+    """When force=True and a pending draft exists, delete it then run the full pipeline."""
+    existing = _make_draft("Old email body.")
+    new_body = "Fresh regenerated email."
+    service, mock_provider, mock_context_svc, mock_draft_svc = _make_service(
+        provider_response=new_body,
+        existing_pending_draft=existing,
+    )
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        result = await service.generate(_CLIENT_ID, "review_due", force=True)
+
+    mock_draft_svc.find_pending_by_client.assert_awaited_once_with(_CLIENT_ID)
+    mock_draft_svc.delete.assert_awaited_once_with(existing.id)
+    mock_context_svc.assemble.assert_awaited_once_with(_CLIENT_ID)
+    mock_provider.complete.assert_awaited_once()
+    mock_draft_svc.create.assert_awaited_once()
+    assert result.id == _DRAFT_ID
+
+
+@pytest.mark.asyncio
+async def test_generate_no_pending_proceeds_normally() -> None:
+    """When no pending draft exists, the full pipeline runs without calling delete."""
+    service, mock_provider, mock_context_svc, mock_draft_svc = _make_service()
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        result = await service.generate(_CLIENT_ID, "review_due")
+
+    mock_draft_svc.find_pending_by_client.assert_awaited_once_with(_CLIENT_ID)
+    mock_draft_svc.delete.assert_not_awaited()
+    mock_context_svc.assemble.assert_awaited_once_with(_CLIENT_ID)
+    mock_provider.complete.assert_awaited_once()
+    mock_draft_svc.create.assert_awaited_once()
+    assert result.id == _DRAFT_ID
+
+
+@pytest.mark.asyncio
+async def test_generate_create_payload_has_correct_fields() -> None:
+    """MessageDraftCreate passed to create() contains the correct client_id and trigger_type."""
+    from app.schemas.message_draft import MessageDraftCreate
+
+    service, _, _, mock_draft_svc = _make_service()
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        await service.generate(_CLIENT_ID, "review_due")
+
+    call_args = mock_draft_svc.create.call_args[0][0]
+    assert isinstance(call_args, MessageDraftCreate)
+    assert call_args.client_id == _CLIENT_ID
+    assert call_args.trigger_type == "review_due"

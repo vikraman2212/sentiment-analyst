@@ -27,6 +27,7 @@ async def generate_draft(
     draft = await GenerationService(db).generate(
         client_id=payload.client_id,
         trigger_type=payload.trigger_type,
+        force=payload.force,
     )
     return GenerateResponse(
         draft_id=draft.id,
