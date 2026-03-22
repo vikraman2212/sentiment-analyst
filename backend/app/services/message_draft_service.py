@@ -9,7 +9,8 @@ from app.core.exceptions import NotFoundError
 from app.models.message_draft import MessageDraft
 from app.repositories.client import ClientRepository
 from app.repositories.message_draft import MessageDraftRepository
-from app.schemas.message_draft import MessageDraftCreate, MessageDraftStatusUpdate
+from app.schemas.client_context import ClientContextResponse
+from app.schemas.message_draft import MessageDraftCreate, MessageDraftStatusUpdate, PendingDraftResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -56,6 +57,31 @@ class MessageDraftService:
         drafts = await self._repo.list_by_client(client_id)
         log.info("message_draft_list_complete", count=len(drafts))
         return drafts
+
+    async def list_all_pending(self) -> list[PendingDraftResponse]:
+        """Return all pending drafts across all clients for the inbox.
+
+        Returns:
+            List of PendingDraftResponse containing draft metadata, client
+            name, and the context snippets associated with the client.
+        """
+        logger.info("message_draft_list_all_pending_started")
+        drafts = await self._repo.list_all_pending()
+        result = [
+            PendingDraftResponse(
+                draft_id=draft.id,
+                client_name=f"{draft.client.first_name} {draft.client.last_name}",
+                trigger_type=draft.trigger_type,
+                generated_content=draft.generated_content,
+                context_used=[
+                    ClientContextResponse.model_validate(tag, from_attributes=True)
+                    for tag in draft.client.context_tags
+                ],
+            )
+            for draft in drafts
+        ]
+        logger.info("message_draft_list_all_pending_complete", count=len(result))
+        return result
 
     async def find_pending_by_client(self, client_id: uuid.UUID) -> MessageDraft | None:
         """Return the pending draft for the given client, or None.

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.client_context import ClientContextResponse
+
 DraftStatus = Literal["pending", "sent"]
 
 
@@ -24,3 +26,13 @@ class MessageDraftResponse(BaseModel):
     trigger_type: str
     generated_content: str
     status: str
+
+
+class PendingDraftResponse(BaseModel):
+    """Response schema for the pending drafts inbox endpoint."""
+
+    draft_id: uuid.UUID
+    client_name: str
+    trigger_type: str
+    generated_content: str
+    context_used: list[ClientContextResponse]
