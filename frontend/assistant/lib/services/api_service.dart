@@ -39,7 +39,10 @@ class ApiService {
     return list.map((e) => Draft.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<void> approveDraft(String draftId) async {
-    await _client.post('/api/v1/drafts/$draftId/approve', {});
+  Future<void> updateDraftStatus(String draftId, String status) async {
+    await _client.patch(
+      '/api/v1/message-drafts/$draftId/status',
+      {'status': status},
+    );
   }
 }

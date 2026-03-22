@@ -25,6 +25,20 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> patch(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final base = await getBaseUrl();
+    final uri = Uri.parse('$base$path');
+    final response = await http.patch(
+      uri,
+      headers: _headers(),
+      body: jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
   Future<void> putBytes(String url, List<int> bytes, String contentType) async {
     final uri = Uri.parse(url);
     final response = await http.put(
