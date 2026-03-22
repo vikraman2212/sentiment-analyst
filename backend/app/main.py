@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.exceptions import ConflictError, ExtractionError, GenerationError, LLMProviderError, NotFoundError
 from app.core.logging import configure_logging
+from app.core.middleware import RequestCorrelationMiddleware
 from app.core.telemetry import configure_telemetry, shutdown_telemetry
 
 configure_logging(log_level=settings.LOG_LEVEL)
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RequestCorrelationMiddleware)
 
     _register_exception_handlers(app)
     _register_routers(app)
