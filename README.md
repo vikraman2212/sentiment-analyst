@@ -13,6 +13,37 @@ Local-first advisor sentiment workflow with a Flutter client, a FastAPI backend,
   - MinIO
 - Ollama runs on the host machine at `http://localhost:11434`
 
+## Flutter App Network Configuration
+
+The Flutter app reads the backend base URL from the Settings screen and persists it via `SharedPreferences`.
+The correct URL depends on how you are running the app:
+
+| Scenario | Base URL |
+|---|---|
+| iOS Simulator (macOS host) | `http://localhost:8000` |
+| Android Emulator | `http://10.0.2.2:8000` |
+| Physical device on same Wi-Fi network | `http://192.168.x.x:8000` |
+
+The backend already binds to `0.0.0.0` (`make backend-run` uses `--host 0.0.0.0`), so no host change is needed.
+CORS is configured to allow all origins in the current local build.
+
+### Finding your machine's local IPv4 address (physical device)
+
+```bash
+# macOS
+ipconfig getifaddr en0
+
+# Or: System Settings → Wi-Fi → Details → IP Address
+```
+
+### Common failure points
+
+- **Wrong IP or URL typo** — double-check with `curl http://<ip>:8000/health` from any machine on the network.
+- **Backend bound to 127.0.0.1** — the default `make backend-run` uses `0.0.0.0`; if you started uvicorn manually, ensure `--host 0.0.0.0`.
+- **Firewall blocking port 8000** — on macOS, System Settings → Network → Firewall → Options, or temporarily disable during local testing.
+- **Device and machine on different networks** — both must be on the same Wi-Fi subnet; a guest network or personal hotspot will not work.
+- **iOS physical device requires HTTPS** — for App Transport Security (ATS) exemptions in development, add `localhost` / the IP to `NSExceptionDomains` in `ios/Runner/Info.plist`, or use `http://` with ATS disabled (set `NSAllowsArbitraryLoads: true` for local dev only).
+
 The backend can be run in either of these modes:
 
 1. Host mode: Python virtualenv + Uvicorn
