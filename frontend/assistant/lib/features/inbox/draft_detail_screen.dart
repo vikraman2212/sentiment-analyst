@@ -55,7 +55,9 @@ class _DraftDetailScreenState extends State<DraftDetailScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not open mail client. Please check your email app.'),
+            content: Text(
+              'Could not open mail client. Please check your email app.',
+            ),
           ),
         );
       }
@@ -103,9 +105,9 @@ class _DraftDetailScreenState extends State<DraftDetailScreen>
     try {
       await _service.updateDraftStatus(widget.draft.draftId, 'sent');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Draft marked as sent')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Draft marked as sent')));
         Navigator.pop(context);
       }
     } catch (e) {
@@ -157,7 +159,12 @@ class _DraftDetailScreenState extends State<DraftDetailScreen>
         label: const Text('Approve & Send'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 88),
+        padding: const EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 88,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

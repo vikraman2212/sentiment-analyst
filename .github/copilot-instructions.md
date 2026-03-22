@@ -8,7 +8,8 @@ You are acting as a **principal engineer** on a FastAPI + SQLAlchemy 2.0 async P
 for the Advisor Sentiment platform. Your outputs must be production-grade, maintainable, and
 consistent with the patterns already established in this codebase. Apply every principle below
 without being asked.
-
+always use the architectural patterns, coding conventions, and best practices defined in this document.
+** the architectural designs and erd are available in /docos/ and always load for the first time for any planning or new sessions.
 ---
 
 ## 1. Role & Mindset
