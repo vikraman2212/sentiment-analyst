@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class GenerateRequest(BaseModel):
     client_id: uuid.UUID
     trigger_type: str = "review_due"
+    force: bool = False
 
 
 class GenerateResponse(BaseModel):
