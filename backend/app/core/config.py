@@ -47,5 +47,13 @@ class Settings(BaseSettings):
     OTEL_ENDPOINT: str = "http://localhost:4318"  # OTLP HTTP collector endpoint
     OTEL_LLM_CAPTURE_PROMPTS: bool = False  # Set True to include prompt text in LLM spans (disabled by default)
 
+    # Prompt overrides — set to a non-empty string to replace the built-in prompt at runtime
+    EXTRACTION_PROMPT_OVERRIDE: str = ""
+    GENERATION_PROMPT_OVERRIDE: str = ""
+
+    # Ollama retry / backoff
+    OLLAMA_MAX_RETRIES: int = 3  # Maximum retry attempts per LLM request
+    OLLAMA_BACKOFF_FACTOR: float = 2.0  # Multiplier: waits 1s, 2s, 4s, …
+
 
 settings = Settings()

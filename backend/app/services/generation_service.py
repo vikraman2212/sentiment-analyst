@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import GenerationError, LLMProviderError
 from app.core.llm_provider import LLMProvider
+from app.core.prompts import GENERATION_SYSTEM_PROMPT
 from app.dependencies.llm import get_llm_provider
 from app.models.message_draft import MessageDraft
 from app.schemas.message_draft import MessageDraftCreate
@@ -27,21 +28,6 @@ from app.services.llm_audit import llm_audit_logger, make_audit_event
 from app.services.message_draft_service import MessageDraftService
 
 logger = structlog.get_logger(__name__)
-
-_SYSTEM_PROMPT = """\
-You are an AI assistant helping a financial advisor write personalised client emails.
-
-Write a warm, professional email body for the advisor to send to the client named in the profile below.
-
-Rules:
-- Maximum 4 sentences.
-- Refer to portfolio size approximately, rounded to the nearest $100,000 \
-(e.g., "approximately $1.2M") — never print unrounded dollar amounts.
-- Use only facts present in the profile. Do not invent information.
-- Address the client by first name in the opening sentence.
-- Return ONLY the email body text. No subject line, no "Dear ...", \
-no sign-off, no markdown formatting.\
-"""
 
 # Patterns used by _normalize to strip accidental LLM output artefacts
 _SUBJECT_RE = re.compile(r"^Subject:.*\n?", re.IGNORECASE | re.MULTILINE)
@@ -109,7 +95,7 @@ class GenerationService:
         try:
             result = await self._provider.complete(
                 context.prompt_block,
-                system=_SYSTEM_PROMPT,
+                system=GENERATION_SYSTEM_PROMPT,
                 model=model,
             )
         except LLMProviderError as exc:

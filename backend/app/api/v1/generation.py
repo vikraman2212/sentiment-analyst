@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
-from app.schemas.generation import GenerateRequest, GenerateResponse
+from app.repositories.generation_failure import GenerationFailureRepository
+from app.schemas.generation import GenerateRequest, GenerateResponse, GenerationFailureResponse
 from app.services.generation_service import GenerationService
 
 router = APIRouter(tags=["generation"])
@@ -35,3 +36,20 @@ async def generate_draft(
         trigger_type=draft.trigger_type,
         generated_content=draft.generated_content,
     )
+
+
+@router.get(
+    "/generation/failures",
+    response_model=list[GenerationFailureResponse],
+)
+async def list_generation_failures(
+    db: AsyncSession = Depends(get_db),
+) -> list[GenerationFailureResponse]:
+    """Return all unresolved generation failure records (dead-letter queue).
+
+    Failures are persisted when ``GenerationWorker`` cannot process a
+    queue message after all retry attempts.  Operators use this endpoint
+    to inspect and triage stuck or failed jobs.
+    """
+    repo = GenerationFailureRepository(db)
+    return await repo.list_unresolved()
