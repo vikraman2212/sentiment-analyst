@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: sentiment-backend
+    # When backend runs on the host machine, use host.docker.internal so
+    # Prometheus (inside Docker) can reach the FastAPI /metrics endpoint.
+    # Adjust the target if the backend is also containerised.
+    static_configs:
+      - targets:
+          - host.docker.internal:8000
+    metrics_path: /metrics

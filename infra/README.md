@@ -8,8 +8,10 @@ For the full startup flow, use the root [README.md](../README.md). This file foc
 
 - PostgreSQL
 - OpenSearch
-- OpenSearch Dashboards
+- OpenSearch Dashboards (LLM audit visualisation)
 - MinIO
+- Jaeger (OTLP trace ingestion + UI)
+- Prometheus (metrics scraping)
 
 ## Service Not In Compose
 
@@ -69,6 +71,25 @@ make infra-logs
 - Access key: `minioadmin`
 - Secret key: `minioadmin`
 
+### Jaeger (Traces)
+
+- UI: `http://localhost:16686`
+- OTLP gRPC: `localhost:4317`
+- OTLP HTTP: `http://localhost:4318`
+- Enable in the backend via `OTEL_ENABLED=true` and `OTEL_ENDPOINT=http://localhost:4318`
+
+### Prometheus (Metrics)
+
+- UI / query: `http://localhost:9090`
+- Scrapes the backend `/metrics` endpoint every 15 s
+- Scrape target configured in `infra/prometheus/prometheus.yml`
+
+### OpenSearch Dashboards (Visualisation)
+
+- UI: `http://localhost:5601`
+- Use this to build index-pattern dashboards over the `llm-audit-*` index
+- No Grafana needed — OpenSearch Dashboards ships bundled with the existing OpenSearch container
+
 ## Notes
 
 - OpenSearch security is disabled for local development.
@@ -77,6 +98,30 @@ make infra-logs
 ```bash
 POSTGRES_PORT=5433 docker compose -f infra/docker-compose.yml --env-file infra/.env.example up -d postgres
 ```
+
+## Observability Verification
+
+After `make infra-up`, verify each observability service is reachable:
+
+```bash
+# Jaeger UI
+open http://localhost:16686
+
+# Prometheus targets (backend should appear as UP)
+open http://localhost:9090/targets
+
+# OpenSearch Dashboards (LLM audit index visualisation)
+open http://localhost:5601
+```
+
+To test the OTLP trace pipeline, set these env vars in the backend and send a request:
+
+```bash
+OTEL_ENABLED=true
+OTEL_ENDPOINT=http://localhost:4318
+```
+
+Traces will appear in the Jaeger UI under the `sentiment-analyst-backend` service name.
 
 ## Backend Networking Hints
 
