@@ -13,9 +13,14 @@ class Settings(BaseSettings):
     # ML
     WHISPER_MODEL: str = "base.en"  # faster-whisper model size
 
+    # LLM provider routing
+    LLM_PROVIDER: str = "ollama"  # "ollama" | future: "openai", "anthropic"
+
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"  # Local Ollama server
-    OLLAMA_MODEL: str = "llama3.2"  # Model to use for JSON extraction
+    OLLAMA_EXTRACTION_MODEL: str = "llama3.2"  # Model for JSON extraction pipeline
+    OLLAMA_GENERATION_MODEL: str = "llama3.2"  # Model for email generation pipeline
+    OLLAMA_TIMEOUT_SECONDS: int = 120  # Per-request httpx timeout
 
     # OpenSearch
     OPENSEARCH_URL: str = "http://localhost:9200"  # Local Compose service

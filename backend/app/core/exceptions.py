@@ -27,3 +27,11 @@ class ExtractionError(Exception):
     def __init__(self, detail: str = "Extraction failed") -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class LLMProviderError(Exception):
+    """Raised when the LLM provider HTTP call fails (timeout, connection, 5xx)."""
+
+    def __init__(self, detail: str = "LLM provider request failed") -> None:
+        self.detail = detail
+        super().__init__(detail)
