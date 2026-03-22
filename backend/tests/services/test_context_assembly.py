@@ -10,9 +10,13 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+import app.services.context_assembly as _context_assembly_mod
 from app.core.exceptions import NotFoundError
 from app.services.context_assembly import ContextAssemblyService
+
+from tests.services.conftest import make_span_exporter
 
 # ---------------------------------------------------------------------------
 # Shared fixtures / helpers
@@ -182,3 +186,80 @@ async def test_list_needing_review_no_clients() -> None:
     results = await service.list_needing_review(_ADVISOR_ID)
 
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Span tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=False)
+def span_exporter() -> InMemorySpanExporter:
+    """Fixture: wire a fresh in-memory exporter into the context assembly tracer."""
+    exporter, provider = make_span_exporter()
+    original = _context_assembly_mod._tracer
+    _context_assembly_mod._tracer = provider.get_tracer(__name__)
+    yield exporter
+    _context_assembly_mod._tracer = original
+
+
+@pytest.mark.asyncio
+async def test_assemble_emits_context_assembly_span(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Happy path: a ``context.assembly`` span is recorded with client_id and tag_count."""
+    service, mocks = _make_service()
+    tags = [
+        _make_tag("personal_interest", "Enjoys tennis"),
+        _make_tag("financial_goal", "Retire early"),
+    ]
+    mocks["client"].get_by_id = AsyncMock(return_value=_make_client())
+    mocks["profile"].get_by_client_id = AsyncMock(return_value=_make_profile())
+    mocks["context"].list_by_client = AsyncMock(return_value=tags)
+
+    await service.assemble(_CLIENT_ID)
+
+    spans = span_exporter.get_finished_spans()
+    assembly_spans = [s for s in spans if s.name == "context.assembly"]
+    assert len(assembly_spans) == 1
+    span = assembly_spans[0]
+    assert span.attributes["client_id"] == str(_CLIENT_ID)
+    assert span.attributes["tag_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_assemble_span_tag_count_zero_when_no_tags(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """No context tags → context.assembly span records tag_count=0."""
+    service, mocks = _make_service()
+    mocks["client"].get_by_id = AsyncMock(return_value=_make_client())
+    mocks["profile"].get_by_client_id = AsyncMock(return_value=None)
+    mocks["context"].list_by_client = AsyncMock(return_value=[])
+
+    await service.assemble(_CLIENT_ID)
+
+    spans = span_exporter.get_finished_spans()
+    assembly_spans = [s for s in spans if s.name == "context.assembly"]
+    assert len(assembly_spans) == 1
+    assert assembly_spans[0].attributes["tag_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_assemble_span_error_status_on_client_not_found(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Client not found → context.assembly span status is ERROR."""
+    from opentelemetry.trace import StatusCode
+
+    service, mocks = _make_service()
+    mocks["client"].get_by_id = AsyncMock(return_value=None)
+
+    with pytest.raises(NotFoundError):
+        await service.assemble(_CLIENT_ID)
+
+    spans = span_exporter.get_finished_spans()
+    assembly_spans = [s for s in spans if s.name == "context.assembly"]
+    assert len(assembly_spans) == 1
+    assert assembly_spans[0].status.status_code == StatusCode.ERROR
+

@@ -14,6 +14,8 @@ import re
 import uuid
 
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -28,6 +30,8 @@ from app.services.llm_audit import llm_audit_logger, make_audit_event
 from app.services.message_draft_service import MessageDraftService
 
 logger = structlog.get_logger(__name__)
+
+_tracer = trace.get_tracer(__name__)
 
 # Patterns used by _normalize to strip accidental LLM output artefacts
 _SUBJECT_RE = re.compile(r"^Subject:.*\n?", re.IGNORECASE | re.MULTILINE)
@@ -81,77 +85,88 @@ class GenerationService:
         log = logger.bind(client_id=str(client_id), trigger_type=trigger_type)
         log.info("generation_started")
 
-        existing = await self._draft_svc.find_pending_by_client(client_id)
-        if existing is not None:
-            if not force:
-                log.info("generation_skipped_existing_pending", draft_id=str(existing.id))
-                return existing
-            log.info("generation_force_replacing", draft_id=str(existing.id))
-            await self._draft_svc.delete(existing.id)
+        with _tracer.start_as_current_span("generation.pipeline") as pipeline_span:
+            pipeline_span.set_attribute("client_id", str(client_id))
+            pipeline_span.set_attribute("trigger_type", trigger_type)
 
-        context = await self._context_svc.assemble(client_id)
+            existing = await self._draft_svc.find_pending_by_client(client_id)
+            if existing is not None:
+                if not force:
+                    log.info("generation_skipped_existing_pending", draft_id=str(existing.id))
+                    pipeline_span.set_attribute("draft_id", str(existing.id))
+                    return existing
+                log.info("generation_force_replacing", draft_id=str(existing.id))
+                await self._draft_svc.delete(existing.id)
 
-        model = settings.OLLAMA_GENERATION_MODEL
-        try:
-            result = await self._provider.complete(
-                context.prompt_block,
-                system=GENERATION_SYSTEM_PROMPT,
+            context = await self._context_svc.assemble(client_id)
+
+            model = settings.OLLAMA_GENERATION_MODEL
+            try:
+                result = await self._provider.complete(
+                    context.prompt_block,
+                    system=GENERATION_SYSTEM_PROMPT,
+                    model=model,
+                )
+            except LLMProviderError as exc:
+                log.error("generation_llm_failed", error=exc.detail, exc_info=True)
+                pipeline_span.record_exception(exc)
+                pipeline_span.set_status(StatusCode.ERROR, exc.detail)
+                asyncio.create_task(
+                    llm_audit_logger.log(
+                        make_audit_event(
+                            pipeline="generation",
+                            client_id=client_id,
+                            model=model,
+                            prompt=context.prompt_block,
+                            response="",
+                            status="error",
+                            latency_ms=0.0,
+                            prompt_tokens=None,
+                            completion_tokens=None,
+                            error=exc.detail,
+                        )
+                    )
+                )
+                raise GenerationError(f"LLM provider failed: {exc.detail}") from exc
+
+            generated_content = _normalize(result.response)
+            log.info(
+                "generation_llm_complete",
                 model=model,
+                latency_ms=round(result.latency_ms, 1),
+                chars=len(generated_content),
             )
-        except LLMProviderError as exc:
-            log.error("generation_llm_failed", error=exc.detail, exc_info=True)
+
             asyncio.create_task(
                 llm_audit_logger.log(
                     make_audit_event(
                         pipeline="generation",
                         client_id=client_id,
                         model=model,
-                        prompt=context.prompt_block,
-                        response="",
-                        status="error",
-                        latency_ms=0.0,
-                        prompt_tokens=None,
-                        completion_tokens=None,
-                        error=exc.detail,
+                        prompt=result.prompt,
+                        response=result.response,
+                        status="success",
+                        latency_ms=result.latency_ms,
+                        prompt_tokens=result.prompt_tokens,
+                        completion_tokens=result.completion_tokens,
+                        error=None,
                     )
                 )
             )
-            raise GenerationError(f"LLM provider failed: {exc.detail}") from exc
 
-        generated_content = _normalize(result.response)
-        log.info(
-            "generation_llm_complete",
-            model=model,
-            latency_ms=round(result.latency_ms, 1),
-            chars=len(generated_content),
-        )
-
-        asyncio.create_task(
-            llm_audit_logger.log(
-                make_audit_event(
-                    pipeline="generation",
-                    client_id=client_id,
-                    model=model,
-                    prompt=result.prompt,
-                    response=result.response,
-                    status="success",
-                    latency_ms=result.latency_ms,
-                    prompt_tokens=result.prompt_tokens,
-                    completion_tokens=result.completion_tokens,
-                    error=None,
+            with _tracer.start_as_current_span("generation.persist") as persist_span:
+                draft = await self._draft_svc.create(
+                    MessageDraftCreate(
+                        client_id=client_id,
+                        trigger_type=trigger_type,
+                        generated_content=generated_content,
+                    )
                 )
-            )
-        )
+                persist_span.set_attribute("draft_id", str(draft.id))
 
-        draft = await self._draft_svc.create(
-            MessageDraftCreate(
-                client_id=client_id,
-                trigger_type=trigger_type,
-                generated_content=generated_content,
-            )
-        )
-        log.info("generation_complete", draft_id=str(draft.id))
-        return draft
+            pipeline_span.set_attribute("draft_id", str(draft.id))
+            log.info("generation_complete", draft_id=str(draft.id))
+            return draft
 
 
 def _normalize(raw: str) -> str:

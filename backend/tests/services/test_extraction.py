@@ -9,10 +9,14 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+import app.services.extraction as _extraction_mod
 from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMResult
 from app.services.extraction import ExtractionService
+
+from tests.services.conftest import make_span_exporter
 
 
 # ---------------------------------------------------------------------------
@@ -167,3 +171,132 @@ async def test_empty_tags_array_returns_zero() -> None:
 
     assert count == 0
     mock_repo.bulk_create.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Span tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=False)
+def span_exporter() -> InMemorySpanExporter:
+    """Fixture: wire a fresh in-memory exporter into the extraction service tracer."""
+    exporter, provider = make_span_exporter()
+    original = _extraction_mod._tracer
+    _extraction_mod._tracer = provider.get_tracer(__name__)
+    yield exporter
+    _extraction_mod._tracer = original
+
+
+@pytest.mark.asyncio
+async def test_extract_emits_pipeline_span(span_exporter: InMemorySpanExporter) -> None:
+    """Happy path: an ``extraction.pipeline`` span is recorded with client and interaction attrs."""
+    provider = _make_provider([_VALID_JSON])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+
+    with patch("app.services.extraction.ClientContextRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.bulk_create = AsyncMock(return_value=[MagicMock(), MagicMock()])
+        mock_repo_cls.return_value = mock_repo
+
+        await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    spans = span_exporter.get_finished_spans()
+    pipeline_spans = [s for s in spans if s.name == "extraction.pipeline"]
+    assert len(pipeline_spans) == 1
+    span = pipeline_spans[0]
+    assert span.attributes["client_id"] == str(_CLIENT_ID)
+    assert span.attributes["interaction_id"] == str(_INTERACTION_ID)
+    assert span.attributes["tags_saved"] == 2
+
+
+@pytest.mark.asyncio
+async def test_extract_emits_llm_attempt_span(span_exporter: InMemorySpanExporter) -> None:
+    """Happy path: one ``extraction.llm_attempt`` span is emitted for the first attempt."""
+    provider = _make_provider([_VALID_JSON])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+
+    with patch("app.services.extraction.ClientContextRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.bulk_create = AsyncMock(return_value=[MagicMock()])
+        mock_repo_cls.return_value = mock_repo
+
+        await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    spans = span_exporter.get_finished_spans()
+    attempt_spans = [s for s in spans if s.name == "extraction.llm_attempt"]
+    assert len(attempt_spans) == 1
+    assert attempt_spans[0].attributes["attempt"] == 1
+    assert attempt_spans[0].attributes["parse_success"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_retry_emits_two_attempt_spans(span_exporter: InMemorySpanExporter) -> None:
+    """Retry path: two ``extraction.llm_attempt`` spans emitted, retry event on pipeline span."""
+    provider = _make_provider(["NOT JSON", _SINGLE_TAG_JSON])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+
+    with patch("app.services.extraction.ClientContextRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.bulk_create = AsyncMock(return_value=[MagicMock()])
+        mock_repo_cls.return_value = mock_repo
+
+        await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    spans = span_exporter.get_finished_spans()
+    attempt_spans = [s for s in spans if s.name == "extraction.llm_attempt"]
+    assert len(attempt_spans) == 2
+    assert attempt_spans[0].attributes["attempt"] == 1
+    assert attempt_spans[0].attributes["parse_success"] is False
+    assert attempt_spans[1].attributes["attempt"] == 2
+    assert attempt_spans[1].attributes["parse_success"] is True
+
+    pipeline_spans = [s for s in spans if s.name == "extraction.pipeline"]
+    assert len(pipeline_spans) == 1
+    event_names = [e.name for e in pipeline_spans[0].events]
+    assert "extraction.retry" in event_names
+
+
+@pytest.mark.asyncio
+async def test_extract_emits_persist_span(span_exporter: InMemorySpanExporter) -> None:
+    """Happy path: an ``extraction.persist`` child span is emitted with tags_saved attribute."""
+    provider = _make_provider([_VALID_JSON])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+
+    with patch("app.services.extraction.ClientContextRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.bulk_create = AsyncMock(return_value=[MagicMock(), MagicMock()])
+        mock_repo_cls.return_value = mock_repo
+
+        await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    spans = span_exporter.get_finished_spans()
+    persist_spans = [s for s in spans if s.name == "extraction.persist"]
+    assert len(persist_spans) == 1
+    assert persist_spans[0].attributes["tags_saved"] == 2
+
+
+@pytest.mark.asyncio
+async def test_extract_pipeline_span_error_on_all_retries_failed(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """All attempts fail → pipeline span status is ERROR."""
+    from opentelemetry.trace import StatusCode
+
+    provider = _make_provider(["JUNK", "STILL JUNK"])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+
+    with patch("app.services.extraction.ClientContextRepository"):
+        with pytest.raises(ExtractionError):
+            await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    spans = span_exporter.get_finished_spans()
+    pipeline_spans = [s for s in spans if s.name == "extraction.pipeline"]
+    assert len(pipeline_spans) == 1
+    assert pipeline_spans[0].status.status_code == StatusCode.ERROR
+

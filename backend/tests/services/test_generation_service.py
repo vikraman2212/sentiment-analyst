@@ -10,11 +10,15 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+import app.services.generation_service as _generation_mod
 from app.core.exceptions import GenerationError, LLMProviderError
 from app.core.llm_provider import LLMResult
 from app.schemas.context_assembly import AssembledContext, FinancialSummary
 from app.services.generation_service import GenerationService, _normalize
+
+from tests.services.conftest import make_span_exporter
 
 
 # ---------------------------------------------------------------------------
@@ -270,3 +274,72 @@ async def test_generate_create_payload_has_correct_fields() -> None:
     assert isinstance(call_args, MessageDraftCreate)
     assert call_args.client_id == _CLIENT_ID
     assert call_args.trigger_type == "review_due"
+
+
+# ---------------------------------------------------------------------------
+# Span tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=False)
+def span_exporter() -> InMemorySpanExporter:
+    """Fixture: wire a fresh in-memory exporter into the generation service tracer."""
+    exporter, provider = make_span_exporter()
+    original = _generation_mod._tracer
+    _generation_mod._tracer = provider.get_tracer(__name__)
+    yield exporter
+    _generation_mod._tracer = original
+
+
+@pytest.mark.asyncio
+async def test_generate_emits_pipeline_span(span_exporter: InMemorySpanExporter) -> None:
+    """Happy path: a ``generation.pipeline`` span is recorded with client and trigger attrs."""
+    service, _, _, _ = _make_service(provider_response="Email body.")
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        await service.generate(_CLIENT_ID, "review_due")
+
+    spans = span_exporter.get_finished_spans()
+    pipeline_spans = [s for s in spans if s.name == "generation.pipeline"]
+    assert len(pipeline_spans) == 1
+    span = pipeline_spans[0]
+    assert span.attributes["client_id"] == str(_CLIENT_ID)
+    assert span.attributes["trigger_type"] == "review_due"
+    assert "draft_id" in span.attributes
+
+
+@pytest.mark.asyncio
+async def test_generate_emits_persist_span(span_exporter: InMemorySpanExporter) -> None:
+    """Happy path: a ``generation.persist`` child span is emitted with draft_id attribute."""
+    service, _, _, _ = _make_service(provider_response="Email body.")
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        await service.generate(_CLIENT_ID, "review_due")
+
+    spans = span_exporter.get_finished_spans()
+    persist_spans = [s for s in spans if s.name == "generation.persist"]
+    assert len(persist_spans) == 1
+    assert persist_spans[0].attributes["draft_id"] == str(_DRAFT_ID)
+
+
+@pytest.mark.asyncio
+async def test_generate_pipeline_span_error_on_llm_failure(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """LLMProviderError → pipeline span status is ERROR with exception recorded."""
+    from opentelemetry.trace import StatusCode
+
+    service, _, _, _ = _make_service(
+        provider_side_effect=LLMProviderError("Connection refused")
+    )
+
+    with patch("app.services.generation_service.asyncio.create_task"):
+        with pytest.raises(GenerationError):
+            await service.generate(_CLIENT_ID, "review_due")
+
+    spans = span_exporter.get_finished_spans()
+    pipeline_spans = [s for s in spans if s.name == "generation.pipeline"]
+    assert len(pipeline_spans) == 1
+    assert pipeline_spans[0].status.status_code == StatusCode.ERROR
+    assert any(e.name == "exception" for e in pipeline_spans[0].events)
+
