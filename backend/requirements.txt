@@ -13,3 +13,10 @@ aioboto3>=13.0
 opensearch-py[async]>=2.0
 apscheduler>=3.10
 redis>=5.0
+
+# OpenTelemetry
+opentelemetry-sdk>=1.25
+opentelemetry-exporter-otlp-proto-http>=1.25
+opentelemetry-instrumentation-fastapi>=0.46b0
+opentelemetry-instrumentation-httpx>=0.46b0
+opentelemetry-instrumentation-sqlalchemy>=0.46b0

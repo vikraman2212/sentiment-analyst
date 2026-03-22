@@ -11,8 +11,10 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.exceptions import ConflictError, ExtractionError, GenerationError, LLMProviderError, NotFoundError
 from app.core.logging import configure_logging
+from app.core.telemetry import configure_telemetry, shutdown_telemetry
 
 configure_logging(log_level=settings.LOG_LEVEL)
+configure_telemetry()
 
 logger = structlog.get_logger(__name__)
 
@@ -63,6 +65,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     scheduler.shutdown(wait=False)
     await worker.stop()
+    shutdown_telemetry()
 
 
 def create_app() -> FastAPI:

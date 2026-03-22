@@ -41,5 +41,10 @@ class Settings(BaseSettings):
     QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"
     REDIS_URL: str = "redis://localhost:6379"
 
+    # OpenTelemetry
+    OTEL_ENABLED: bool = False  # Set True to activate tracing and metrics export
+    OTEL_SERVICE_NAME: str = "sentiment-analyst-backend"
+    OTEL_ENDPOINT: str = "http://localhost:4318"  # OTLP HTTP collector endpoint
+
 
 settings = Settings()
