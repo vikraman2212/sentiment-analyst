@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     OTEL_ENABLED: bool = False  # Set True to activate tracing and metrics export
     OTEL_SERVICE_NAME: str = "sentiment-analyst-backend"
     OTEL_ENDPOINT: str = "http://localhost:4318"  # OTLP HTTP collector endpoint
+    OTEL_LLM_CAPTURE_PROMPTS: bool = False  # Set True to include prompt text in LLM spans (disabled by default)
 
 
 settings = Settings()
