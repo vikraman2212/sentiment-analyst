@@ -29,7 +29,40 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.core.opensearch import ensure_llm_audits_index
 
     await ensure_llm_audits_index()
+
+    # Start the generation worker consumer.
+    from app.services.generation_worker import GenerationWorker
+
+    worker = GenerationWorker()
+    await worker.start()
+
+    # Start APScheduler for the daily generation fan-out (local / on-prem).
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.cron import CronTrigger
+
+    from app.services.scheduler import SchedulerService
+
+    async def _daily_job() -> None:
+        await SchedulerService().publish_pending_generations()
+
+    scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
+    scheduler.add_job(
+        _daily_job,
+        CronTrigger(hour=settings.SCHEDULER_HOUR, timezone=settings.SCHEDULER_TIMEZONE),
+        id="daily_generation",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info(
+        "apscheduler_started",
+        hour=settings.SCHEDULER_HOUR,
+        timezone=settings.SCHEDULER_TIMEZONE,
+    )
+
     yield
+
+    scheduler.shutdown(wait=False)
+    await worker.stop()
 
 
 def create_app() -> FastAPI:
