@@ -18,10 +18,10 @@ Local-first advisor sentiment workflow with a Flutter client, a FastAPI backend,
 The Flutter app reads the backend base URL from the Settings screen and persists it via `SharedPreferences`.
 The correct URL depends on how you are running the app:
 
-| Scenario | Base URL |
-|---|---|
-| iOS Simulator (macOS host) | `http://localhost:8000` |
-| Android Emulator | `http://10.0.2.2:8000` |
+| Scenario                              | Base URL                  |
+| ------------------------------------- | ------------------------- |
+| iOS Simulator (macOS host)            | `http://localhost:8000`   |
+| Android Emulator                      | `http://10.0.2.2:8000`    |
 | Physical device on same Wi-Fi network | `http://192.168.x.x:8000` |
 
 The backend already binds to `0.0.0.0` (`make backend-run` uses `--host 0.0.0.0`), so no host change is needed.

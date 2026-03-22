@@ -71,10 +71,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (_) => setState(() => _saved = false),
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _save,
-                child: const Text('Save'),
-              ),
+              ElevatedButton(onPressed: _save, child: const Text('Save')),
               if (_saved)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -107,8 +104,9 @@ class _UrlGuide extends StatelessWidget {
           children: [
             Text(
               'Which URL should I use?',
-              style: theme.textTheme.titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 12),
             _GuideRow(
@@ -130,8 +128,9 @@ class _UrlGuide extends StatelessWidget {
             Text(
               'Replace 192.168.x.x with your machine\'s local IPv4 address '
               '(found via System Settings → Wi-Fi → Details, or `ipconfig getifaddr en0` in Terminal).',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
