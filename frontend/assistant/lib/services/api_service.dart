@@ -35,8 +35,7 @@ class ApiService {
   }
 
   Future<List<Draft>> getPendingDrafts() async {
-    final data = await _client.get('/api/v1/drafts/pending');
-    final list = data['drafts'] as List<dynamic>;
+    final list = await _client.getList('/api/v1/drafts/pending');
     return list.map((e) => Draft.fromJson(e as Map<String, dynamic>)).toList();
   }
 
