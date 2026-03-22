@@ -35,3 +35,11 @@ class LLMProviderError(Exception):
     def __init__(self, detail: str = "LLM provider request failed") -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class GenerationError(Exception):
+    """Raised when the email generation pipeline fails."""
+
+    def __init__(self, detail: str = "Generation failed") -> None:
+        self.detail = detail
+        super().__init__(detail)
