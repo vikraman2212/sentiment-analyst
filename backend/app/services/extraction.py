@@ -1,7 +1,8 @@
-"""Ollama JSON extraction service.
+"""LLM-backed JSON extraction service.
 
-Sends a transcript to a local Ollama instance and extracts structured
-context tags (category + content pairs) using ``format="json"`` enforcement.
+Sends a transcript to the configured LLM provider and extracts structured
+context tags (category + content pairs).  The provider abstraction allows
+swapping Ollama for OpenAI/Anthropic without changing this module.
 
 Usage::
 
@@ -11,20 +12,20 @@ Usage::
 
 import asyncio
 import json
-import time
 import uuid
-from dataclasses import dataclass
 
-import httpx
 import structlog
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import ExtractionError
+from app.core.llm_provider import LLMProvider
+from app.dependencies.llm import get_llm_provider
 from app.repositories.client_context import ClientContextRepository
 from app.schemas.client_context import ClientContextCreate, ContextCategory
 from app.services.llm_audit import llm_audit_logger, make_audit_event
+
 
 # Lenient parsing model — category is unconstrained str so that invalid
 # categories from the LLM are soft-skipped rather than treated as a JSON error.
@@ -39,17 +40,6 @@ class _RawExtractionResult(BaseModel):
 logger = structlog.get_logger(__name__)
 
 _VALID_CATEGORIES: set[str] = set(ContextCategory.__args__)  # type: ignore[attr-defined]
-
-
-@dataclass
-class _OllamaResult:
-    """Raw output captured from a single Ollama /api/generate call."""
-
-    response: str
-    prompt: str
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    latency_ms: float
 
 _EXTRACTION_PROMPT_TEMPLATE = """\
 You are an AI assistant helping a financial advisor extract structured notes from a client meeting transcript.
@@ -79,12 +69,15 @@ Transcript:
 
 
 class ExtractionService:
-    """Extract context tags from a transcript via Ollama's local API.
+    """Extract context tags from a transcript via the configured LLM provider.
 
     Retries once on JSON parse failure. Tags with unrecognised categories
     are soft-skipped (logged as warnings) so that a partially valid response
     still produces results.
     """
+
+    def __init__(self, provider: LLMProvider | None = None) -> None:
+        self._provider = provider or get_llm_provider()
 
     async def extract(
         self,
@@ -93,7 +86,7 @@ class ExtractionService:
         interaction_id: uuid.UUID,
         db: AsyncSession,
     ) -> int:
-        """Send transcript to Ollama, validate response, persist tags.
+        """Send transcript to LLM provider, validate response, persist tags.
 
         Args:
             transcript: Full transcript text from faster-whisper.
@@ -105,7 +98,7 @@ class ExtractionService:
             Number of context tags successfully persisted.
 
         Raises:
-            ExtractionError: If Ollama returns invalid JSON on all attempts.
+            ExtractionError: If the LLM returns invalid JSON on all attempts.
         """
         log = logger.bind(
             client_id=str(client_id),
@@ -113,14 +106,17 @@ class ExtractionService:
         )
         log.info("extraction_started")
 
-        result1 = await self._call_ollama(transcript, log)
+        prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
+        model = settings.OLLAMA_EXTRACTION_MODEL
+
+        result1 = await self._provider.complete(prompt, format="json", model=model)
         tags = self._parse_and_validate(result1.response, log, attempt=1)
         asyncio.create_task(
             llm_audit_logger.log(
                 make_audit_event(
                     pipeline="extraction",
                     client_id=client_id,
-                    model=settings.OLLAMA_MODEL,
+                    model=model,
                     prompt=result1.prompt,
                     response=result1.response,
                     status="success" if tags is not None else "error",
@@ -134,14 +130,14 @@ class ExtractionService:
 
         if tags is None:
             log.warning("extraction_retry", reason="invalid_json_first_attempt")
-            result2 = await self._call_ollama(transcript, log)
+            result2 = await self._provider.complete(prompt, format="json", model=model)
             tags = self._parse_and_validate(result2.response, log, attempt=2)
             asyncio.create_task(
                 llm_audit_logger.log(
                     make_audit_event(
                         pipeline="extraction",
                         client_id=client_id,
-                        model=settings.OLLAMA_MODEL,
+                        model=model,
                         prompt=result2.prompt,
                         response=result2.response,
                         status="success" if tags is not None else "error",
@@ -155,7 +151,7 @@ class ExtractionService:
 
         if tags is None:
             raise ExtractionError(
-                "Ollama returned invalid JSON after 2 attempts"
+                "LLM returned invalid JSON after 2 attempts"
             )
 
         valid_payloads = self._filter_valid_tags(tags, client_id, interaction_id, log)
@@ -166,56 +162,6 @@ class ExtractionService:
         saved = await ClientContextRepository(db).bulk_create(valid_payloads)
         log.info("extraction_complete", saved=len(saved))
         return len(saved)
-
-    async def _call_ollama(
-        self,
-        transcript: str,
-        log: structlog.BoundLogger,
-    ) -> _OllamaResult:
-        """POST to Ollama /api/generate and return an _OllamaResult.
-
-        Captures end-to-end latency and token counts from the response body.
-        """
-        prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
-        payload = {
-            "model": settings.OLLAMA_MODEL,
-            "prompt": prompt,
-            "format": "json",
-            "stream": False,
-        }
-        log.info("ollama_request_started", model=settings.OLLAMA_MODEL)
-        start = time.monotonic()
-        try:
-            async with httpx.AsyncClient(
-                base_url=settings.OLLAMA_BASE_URL,
-                timeout=60.0,
-            ) as client:
-                response = await client.post("/api/generate", json=payload)
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
-            log.error("ollama_http_error", error=str(exc), exc_info=True)
-            raise ExtractionError(f"Ollama request failed: {exc}") from exc
-        finally:
-            latency_ms = (time.monotonic() - start) * 1_000
-
-        body = response.json()
-        raw = body.get("response", "")
-        prompt_tokens: int | None = body.get("prompt_eval_count")
-        completion_tokens: int | None = body.get("eval_count")
-        log.info(
-            "ollama_response_received",
-            chars=len(raw),
-            latency_ms=round(latency_ms, 1),
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-        )
-        return _OllamaResult(
-            response=raw,
-            prompt=prompt,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            latency_ms=latency_ms,
-        )
 
     def _parse_and_validate(
         self,

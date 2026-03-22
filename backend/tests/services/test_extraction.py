@@ -1,7 +1,7 @@
 """Unit tests for ExtractionService.
 
-All external dependencies (httpx, ClientContextRepository) are mocked so no
-network or database is required. Tests follow AAA (Arrange → Act → Assert).
+All external dependencies (LLMProvider, ClientContextRepository) are mocked so
+no network or database is required. Tests follow AAA (Arrange → Act → Assert).
 """
 
 import json
@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.core.exceptions import ExtractionError
+from app.core.llm_provider import LLMResult
 from app.services.extraction import ExtractionService
 
 
@@ -21,7 +22,7 @@ from app.services.extraction import ExtractionService
 _CLIENT_ID = uuid.uuid4()
 _INTERACTION_ID = uuid.uuid4()
 
-_VALID_OLLAMA_BODY = json.dumps(
+_VALID_JSON = json.dumps(
     {
         "tags": [
             {"category": "personal_interest", "content": "Enjoys golf"},
@@ -30,21 +31,33 @@ _VALID_OLLAMA_BODY = json.dumps(
     }
 )
 
-_SINGLE_TAG_BODY = json.dumps(
+_SINGLE_TAG_JSON = json.dumps(
     {"tags": [{"category": "family_event", "content": "Daughter starting college"}]}
 )
 
 
-def _make_httpx_response(body: str) -> MagicMock:
-    """Return a mock httpx.Response that yields the given JSON body."""
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"response": body}
-    return mock_resp
+def _make_result(response: str) -> LLMResult:
+    """Build a fake LLMResult with the given response text."""
+    return LLMResult(
+        response=response,
+        prompt="<prompt>",
+        prompt_tokens=10,
+        completion_tokens=20,
+        latency_ms=100.0,
+    )
 
 
-def _make_service() -> ExtractionService:
-    return ExtractionService()
+def _make_provider(responses: list[str]) -> AsyncMock:
+    """Return a mock LLMProvider whose complete() yields the given responses."""
+    provider = AsyncMock()
+    provider.complete = AsyncMock(
+        side_effect=[_make_result(r) for r in responses]
+    )
+    return provider
+
+
+def _make_service(provider: AsyncMock) -> ExtractionService:
+    return ExtractionService(provider=provider)
 
 
 # ---------------------------------------------------------------------------
@@ -54,23 +67,14 @@ def _make_service() -> ExtractionService:
 
 @pytest.mark.asyncio
 async def test_valid_extraction_returns_correct_count() -> None:
-    """Happy path: Ollama returns valid JSON → 2 tags persisted → count=2."""
-    service = _make_service()
+    """LLM returns valid JSON → 2 tags persisted → count=2."""
+    provider = _make_provider([_VALID_JSON])
+    service = _make_service(provider)
     mock_db = AsyncMock()
 
-    with (
-        patch(
-            "app.services.extraction.httpx.AsyncClient",
-        ) as mock_client_cls,
-        patch(
-            "app.services.extraction.ClientContextRepository"
-        ) as mock_repo_cls,
-    ):
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=_make_httpx_response(_VALID_OLLAMA_BODY))
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch(
+        "app.services.extraction.ClientContextRepository"
+    ) as mock_repo_cls:
         mock_repo = AsyncMock()
         mock_repo.bulk_create = AsyncMock(return_value=[MagicMock(), MagicMock()])
         mock_repo_cls.return_value = mock_repo
@@ -85,22 +89,14 @@ async def test_valid_extraction_returns_correct_count() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_on_bad_json_succeeds() -> None:
-    """First Ollama call returns garbage; second call returns valid JSON → count=1."""
-    service = _make_service()
+    """First LLM call returns garbage; second call returns valid JSON → count=1."""
+    provider = _make_provider(["NOT JSON AT ALL", _SINGLE_TAG_JSON])
+    service = _make_service(provider)
     mock_db = AsyncMock()
 
-    bad_response = _make_httpx_response("NOT JSON AT ALL")
-    good_response = _make_httpx_response(_SINGLE_TAG_BODY)
-
-    with (
-        patch("app.services.extraction.httpx.AsyncClient") as mock_client_cls,
-        patch("app.services.extraction.ClientContextRepository") as mock_repo_cls,
-    ):
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(side_effect=[bad_response, good_response])
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch(
+        "app.services.extraction.ClientContextRepository"
+    ) as mock_repo_cls:
         mock_repo = AsyncMock()
         mock_repo.bulk_create = AsyncMock(return_value=[MagicMock()])
         mock_repo_cls.return_value = mock_repo
@@ -108,25 +104,17 @@ async def test_retry_on_bad_json_succeeds() -> None:
         count = await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
 
     assert count == 1
+    assert provider.complete.await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_all_retries_exhausted_raises_extraction_error() -> None:
-    """Both Ollama calls return garbage JSON → ExtractionError raised."""
-    service = _make_service()
+    """Both LLM calls return garbage JSON → ExtractionError raised."""
+    provider = _make_provider(["JUNK OUTPUT {]", "STILL JUNK"])
+    service = _make_service(provider)
     mock_db = AsyncMock()
 
-    bad_response = _make_httpx_response("JUNK OUTPUT {]")
-
-    with (
-        patch("app.services.extraction.httpx.AsyncClient") as mock_client_cls,
-        patch("app.services.extraction.ClientContextRepository"),
-    ):
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(side_effect=[bad_response, bad_response])
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch("app.services.extraction.ClientContextRepository"):
         with pytest.raises(ExtractionError):
             await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
 
@@ -142,18 +130,13 @@ async def test_invalid_category_tags_are_skipped() -> None:
             ]
         }
     )
-    service = _make_service()
+    provider = _make_provider([body])
+    service = _make_service(provider)
     mock_db = AsyncMock()
 
-    with (
-        patch("app.services.extraction.httpx.AsyncClient") as mock_client_cls,
-        patch("app.services.extraction.ClientContextRepository") as mock_repo_cls,
-    ):
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=_make_httpx_response(body))
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch(
+        "app.services.extraction.ClientContextRepository"
+    ) as mock_repo_cls:
         mock_repo = AsyncMock()
         mock_repo.bulk_create = AsyncMock(return_value=[MagicMock()])
         mock_repo_cls.return_value = mock_repo
@@ -168,20 +151,15 @@ async def test_invalid_category_tags_are_skipped() -> None:
 
 @pytest.mark.asyncio
 async def test_empty_tags_array_returns_zero() -> None:
-    """Ollama returns valid JSON with empty tags array → count=0, no DB writes."""
+    """LLM returns valid JSON with empty tags array → count=0, no DB writes."""
     body = json.dumps({"tags": []})
-    service = _make_service()
+    provider = _make_provider([body])
+    service = _make_service(provider)
     mock_db = AsyncMock()
 
-    with (
-        patch("app.services.extraction.httpx.AsyncClient") as mock_client_cls,
-        patch("app.services.extraction.ClientContextRepository") as mock_repo_cls,
-    ):
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=_make_httpx_response(body))
-        mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-        mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
+    with patch(
+        "app.services.extraction.ClientContextRepository"
+    ) as mock_repo_cls:
         mock_repo = AsyncMock()
         mock_repo_cls.return_value = mock_repo
 
