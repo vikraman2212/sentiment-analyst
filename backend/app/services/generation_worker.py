@@ -21,6 +21,7 @@ import structlog
 from app.core.message_queue import MessageQueue
 from app.db.session import AsyncSessionLocal
 from app.dependencies.queue import get_queue
+from app.repositories.generation_failure import GenerationFailureRepository
 from app.services.generation_service import GenerationService
 
 logger = structlog.get_logger(__name__)
@@ -85,4 +86,24 @@ class GenerationWorker:
                     error=str(exc),
                     exc_info=True,
                 )
+                # Persist to dead-letter table so failures are observable.
+                try:
+                    async with AsyncSessionLocal() as db:
+                        failure_repo = GenerationFailureRepository(db)
+                        failure = await failure_repo.create(
+                            client_id=message.client_id,
+                            trigger_type=message.trigger_type,
+                            message_id=message.message_id,
+                            error_detail=str(exc),
+                        )
+                        log.warning(
+                            "generation_failure_persisted",
+                            failure_id=str(failure.id),
+                        )
+                except Exception as persist_exc:
+                    log.error(
+                        "generation_failure_persist_error",
+                        error=str(persist_exc),
+                        exc_info=True,
+                    )
                 # Continue the loop — do not let a single failure crash the worker.

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMProvider
+from app.core.prompts import EXTRACTION_PROMPT_TEMPLATE
 from app.dependencies.llm import get_llm_provider
 from app.repositories.client_context import ClientContextRepository
 from app.schemas.client_context import ClientContextCreate, ContextCategory
@@ -40,32 +41,6 @@ class _RawExtractionResult(BaseModel):
 logger = structlog.get_logger(__name__)
 
 _VALID_CATEGORIES: set[str] = set(ContextCategory.__args__)  # type: ignore[attr-defined]
-
-_EXTRACTION_PROMPT_TEMPLATE = """\
-You are an AI assistant helping a financial advisor extract structured notes from a client meeting transcript.
-
-Analyse the transcript below and extract context items. Return ONLY a JSON object in this exact format:
-{{
-  "tags": [
-    {{"category": "<category>", "content": "<concise note>"}},
-    ...
-  ]
-}}
-
-Valid categories (use exactly as written):
-- personal_interest
-- financial_goal
-- family_event
-- risk_tolerance
-
-Rules:
-- Only include items clearly supported by the transcript.
-- Each tag must have exactly the fields "category" and "content".
-- Do not include any commentary, markdown, or text outside the JSON object.
-
-Transcript:
-{transcript}
-"""
 
 
 class ExtractionService:
@@ -106,7 +81,7 @@ class ExtractionService:
         )
         log.info("extraction_started")
 
-        prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
+        prompt = EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
         model = settings.OLLAMA_EXTRACTION_MODEL
 
         result1 = await self._provider.complete(prompt, format="json", model=model)

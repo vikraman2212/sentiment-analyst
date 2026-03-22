@@ -2,6 +2,7 @@ from app.models.advisor import Advisor
 from app.models.client import Client
 from app.models.client_context import ClientContext
 from app.models.financial_profile import FinancialProfile
+from app.models.generation_failure import GenerationFailure
 from app.models.interaction import Interaction
 from app.models.message_draft import MessageDraft
 
@@ -10,6 +11,7 @@ __all__ = [
     "Client",
     "ClientContext",
     "FinancialProfile",
+    "GenerationFailure",
     "Interaction",
     "MessageDraft",
 ]

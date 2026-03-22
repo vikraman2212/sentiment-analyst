@@ -33,6 +33,9 @@ class Client(Base):
     message_drafts: Mapped[list["MessageDraft"]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
+    generation_failures: Mapped[list["GenerationFailure"]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
 
 
 from app.models.advisor import Advisor  # noqa: E402 — resolve circular ref
@@ -40,3 +43,4 @@ from app.models.financial_profile import FinancialProfile  # noqa: E402
 from app.models.client_context import ClientContext  # noqa: E402
 from app.models.interaction import Interaction  # noqa: E402
 from app.models.message_draft import MessageDraft  # noqa: E402
+from app.models.generation_failure import GenerationFailure  # noqa: E402
