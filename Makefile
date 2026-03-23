@@ -6,7 +6,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs stack-up stack-down stack-logs stack-migrate backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs stack-up stack-down stack-logs stack-migrate seed-db backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
@@ -30,6 +30,17 @@ stack-logs:
 # Run only the Alembic migration step inside the compose network (one-shot container)
 stack-migrate:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend run --rm backend alembic upgrade head
+
+# Load seed data into the running Postgres container.
+# Run this after migrations have been applied (make stack-migrate or make backend-migrate).
+# Sources infra/.env.example so the correct DB user / name are used automatically.
+seed-db:
+	@echo "Loading seed data into sentiment-postgres..."
+	@set -a && . $(INFRA_DIR)/.env.example && set +a && \
+		docker exec -i sentiment-postgres \
+			psql -U "$${POSTGRES_USER:-admin}" -d "$${POSTGRES_DB:-advisor_db}" \
+			< $(INFRA_DIR)/postgres/seed.sql
+	@echo "Seed data loaded."
 
 backend-install:
 	cd $(BACKEND_DIR) && uv sync
