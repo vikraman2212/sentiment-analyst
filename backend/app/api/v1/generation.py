@@ -52,4 +52,5 @@ async def list_generation_failures(
     to inspect and triage stuck or failed jobs.
     """
     repo = GenerationFailureRepository(db)
-    return await repo.list_unresolved()
+    failures = await repo.list_unresolved()
+    return [GenerationFailureResponse.model_validate(f) for f in failures]

@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.exceptions import ConflictError, ExtractionError, GenerationError, LLMProviderError, NotFoundError
 from app.core.logging import configure_logging
 from app.core.middleware import RequestCorrelationMiddleware
-from app.core.telemetry import configure_telemetry, shutdown_telemetry
+from app.core.telemetry import configure_telemetry, register_metrics_endpoint, shutdown_telemetry
 
 configure_logging(log_level=settings.LOG_LEVEL)
 configure_telemetry()
@@ -40,8 +40,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await worker.start()
 
     # Start APScheduler for the daily generation fan-out (local / on-prem).
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-not-found]
+    from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-not-found]
 
     from app.services.scheduler import SchedulerService
 
@@ -88,6 +88,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RequestCorrelationMiddleware)
 
+    register_metrics_endpoint(app)
     _register_exception_handlers(app)
     _register_routers(app)
 

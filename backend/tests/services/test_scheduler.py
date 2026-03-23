@@ -16,6 +16,7 @@ import pytest
 from app.core.message_queue import GenerationMessage
 from app.schemas.context_assembly import AssembledContext, FinancialSummary
 from app.services.scheduler import SchedulerService
+from tests.services.conftest import get_metric_value
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,15 @@ async def test_publish_happy_path_two_clients() -> None:
     # Arrange
     queue = _make_queue()
     svc = SchedulerService(queue=queue)
+    before_runs = get_metric_value(
+        "sentiment_scheduler_runs_total",
+        {"status": "success"},
+    )
+    before_duration = get_metric_value(
+        "sentiment_scheduler_duration_seconds_count",
+        {"status": "success"},
+    )
+    before_published = get_metric_value("sentiment_scheduler_messages_published_total")
 
     with (
         patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
@@ -100,6 +110,15 @@ async def test_publish_happy_path_two_clients() -> None:
         msg: GenerationMessage = call.args[0]
         assert msg.trigger_type == "review_due"
         assert msg.advisor_id == _ADVISOR_ID
+    assert get_metric_value(
+        "sentiment_scheduler_runs_total",
+        {"status": "success"},
+    ) == before_runs + 1
+    assert get_metric_value(
+        "sentiment_scheduler_duration_seconds_count",
+        {"status": "success"},
+    ) == before_duration + 1
+    assert get_metric_value("sentiment_scheduler_messages_published_total") == before_published + 2
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,7 @@ import structlog
 
 from app.core.config import settings
 from app.core.message_queue import GenerationMessage, MessageQueue
+from app.core.telemetry import record_queue_publish
 
 logger = structlog.get_logger(__name__)
 
@@ -67,13 +68,14 @@ class RedisStreamQueue:
     async def publish(self, message: GenerationMessage) -> None:
         """Append a generation message to the Redis stream."""
         client = await self._get_client()
-        payload = {
+        payload: dict[str, str | int | float] = {
             "client_id": str(message.client_id),
             "advisor_id": str(message.advisor_id),
             "trigger_type": message.trigger_type,
         }
-        entry_id: str = await client.xadd(_STREAM_KEY, payload)  # type: ignore[assignment]
+        entry_id: str = await client.xadd(_STREAM_KEY, payload)  # type: ignore[assignment,arg-type]
         message.message_id = entry_id
+        record_queue_publish("redis")
         logger.info(
             "redis_stream_publish",
             client_id=str(message.client_id),

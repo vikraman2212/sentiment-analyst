@@ -5,8 +5,11 @@ MessageDraftService) are mocked so no network or database is required.
 Tests follow AAA (Arrange → Act → Assert).
 """
 
+from collections.abc import Generator
+
 import uuid
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,7 +21,7 @@ from app.core.llm_provider import LLMResult
 from app.schemas.context_assembly import AssembledContext, FinancialSummary
 from app.services.generation_service import GenerationService, _normalize
 
-from tests.services.conftest import make_span_exporter
+from tests.services.conftest import get_metric_value, make_span_exporter
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +104,22 @@ def _make_service(
     return service, mock_provider, mock_context_svc, mock_draft_svc
 
 
+@pytest.fixture(autouse=True)
+def patch_background_audit_tasks() -> Generator[None, None, None]:
+    """Patch fire-and-forget audit task scheduling to keep tests deterministic."""
+    def _discard_task(coro: object) -> MagicMock:
+        close = getattr(coro, "close", None)
+        if callable(close):
+            close()
+        return MagicMock()
+
+    with patch(
+        "app.services.generation_service.asyncio.create_task",
+        side_effect=_discard_task,
+    ):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # GenerationService tests
 # ---------------------------------------------------------------------------
@@ -114,8 +133,7 @@ async def test_generate_happy_path() -> None:
         provider_response=email_body
     )
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        draft = await service.generate(_CLIENT_ID, "review_due")
+    draft = await service.generate(_CLIENT_ID, "review_due")
 
     assert draft.id == _DRAFT_ID
     mock_context_svc.assemble.assert_awaited_once_with(_CLIENT_ID)
@@ -147,9 +165,8 @@ async def test_generate_llm_provider_error_raises_generation_error() -> None:
         provider_side_effect=LLMProviderError("Connection refused")
     )
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        with pytest.raises(GenerationError, match="LLM provider failed"):
-            await service.generate(_CLIENT_ID, "review_due")
+    with pytest.raises(GenerationError, match="LLM provider failed"):
+        await service.generate(_CLIENT_ID, "review_due")
 
 
 @pytest.mark.asyncio
@@ -160,8 +177,7 @@ async def test_generate_passes_prompt_block_to_provider() -> None:
         assembled_context=_make_assembled_context(prompt_block=custom_block)
     )
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        await service.generate(_CLIENT_ID, "review_due")
+    await service.generate(_CLIENT_ID, "review_due")
 
     prompt_arg = mock_provider.complete.call_args[0][0]
     assert prompt_arg == custom_block
@@ -233,8 +249,7 @@ async def test_generate_force_deletes_existing_and_regenerates() -> None:
         existing_pending_draft=existing,
     )
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        result = await service.generate(_CLIENT_ID, "review_due", force=True)
+    result = await service.generate(_CLIENT_ID, "review_due", force=True)
 
     mock_draft_svc.find_pending_by_client.assert_awaited_once_with(_CLIENT_ID)
     mock_draft_svc.delete.assert_awaited_once_with(existing.id)
@@ -249,8 +264,7 @@ async def test_generate_no_pending_proceeds_normally() -> None:
     """When no pending draft exists, the full pipeline runs without calling delete."""
     service, mock_provider, mock_context_svc, mock_draft_svc = _make_service()
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        result = await service.generate(_CLIENT_ID, "review_due")
+    result = await service.generate(_CLIENT_ID, "review_due")
 
     mock_draft_svc.find_pending_by_client.assert_awaited_once_with(_CLIENT_ID)
     mock_draft_svc.delete.assert_not_awaited()
@@ -267,13 +281,83 @@ async def test_generate_create_payload_has_correct_fields() -> None:
 
     service, _, _, mock_draft_svc = _make_service()
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        await service.generate(_CLIENT_ID, "review_due")
+    await service.generate(_CLIENT_ID, "review_due")
 
     call_args = mock_draft_svc.create.call_args[0][0]
     assert isinstance(call_args, MessageDraftCreate)
     assert call_args.client_id == _CLIENT_ID
     assert call_args.trigger_type == "review_due"
+
+
+@pytest.mark.asyncio
+async def test_generate_records_success_metrics() -> None:
+    """Successful generation updates request and duration metrics."""
+    service, _, _, _ = _make_service(provider_response="Email body.")
+    before_requests = get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "success"},
+    )
+    before_duration = get_metric_value(
+        "sentiment_generation_duration_seconds_count",
+        {"status": "success"},
+    )
+
+    await service.generate(_CLIENT_ID, "review_due")
+
+    assert get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "success"},
+    ) == before_requests + 1
+    assert get_metric_value(
+        "sentiment_generation_duration_seconds_count",
+        {"status": "success"},
+    ) == before_duration + 1
+
+
+@pytest.mark.asyncio
+async def test_generate_records_cached_metrics() -> None:
+    """Returning an existing draft records the cached generation status."""
+    existing = _make_draft("Existing email body.")
+    service, _, _, _ = _make_service(existing_pending_draft=existing)
+    before_requests = get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "cached"},
+    )
+
+    await service.generate(_CLIENT_ID, "review_due")
+
+    assert get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "cached"},
+    ) == before_requests + 1
+
+
+@pytest.mark.asyncio
+async def test_generate_records_error_metrics() -> None:
+    """LLM failures update error request and duration metrics."""
+    service, _, _, _ = _make_service(
+        provider_side_effect=LLMProviderError("Connection refused")
+    )
+    before_requests = get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "error"},
+    )
+    before_duration = get_metric_value(
+        "sentiment_generation_duration_seconds_count",
+        {"status": "error"},
+    )
+
+    with pytest.raises(GenerationError, match="LLM provider failed"):
+        await service.generate(_CLIENT_ID, "review_due")
+
+    assert get_metric_value(
+        "sentiment_generation_requests_total",
+        {"status": "error"},
+    ) == before_requests + 1
+    assert get_metric_value(
+        "sentiment_generation_duration_seconds_count",
+        {"status": "error"},
+    ) == before_duration + 1
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +366,7 @@ async def test_generate_create_payload_has_correct_fields() -> None:
 
 
 @pytest.fixture(autouse=False)
-def span_exporter() -> InMemorySpanExporter:
+def span_exporter() -> Generator[InMemorySpanExporter, None, None]:
     """Fixture: wire a fresh in-memory exporter into the generation service tracer."""
     exporter, provider = make_span_exporter()
     original = _generation_mod._tracer
@@ -296,16 +380,16 @@ async def test_generate_emits_pipeline_span(span_exporter: InMemorySpanExporter)
     """Happy path: a ``generation.pipeline`` span is recorded with client and trigger attrs."""
     service, _, _, _ = _make_service(provider_response="Email body.")
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        await service.generate(_CLIENT_ID, "review_due")
+    await service.generate(_CLIENT_ID, "review_due")
 
     spans = span_exporter.get_finished_spans()
     pipeline_spans = [s for s in spans if s.name == "generation.pipeline"]
     assert len(pipeline_spans) == 1
     span = pipeline_spans[0]
-    assert span.attributes["client_id"] == str(_CLIENT_ID)
-    assert span.attributes["trigger_type"] == "review_due"
-    assert "draft_id" in span.attributes
+    attributes = cast(dict[str, object], span.attributes or {})
+    assert attributes["client_id"] == str(_CLIENT_ID)
+    assert attributes["trigger_type"] == "review_due"
+    assert "draft_id" in attributes
 
 
 @pytest.mark.asyncio
@@ -313,13 +397,13 @@ async def test_generate_emits_persist_span(span_exporter: InMemorySpanExporter) 
     """Happy path: a ``generation.persist`` child span is emitted with draft_id attribute."""
     service, _, _, _ = _make_service(provider_response="Email body.")
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        await service.generate(_CLIENT_ID, "review_due")
+    await service.generate(_CLIENT_ID, "review_due")
 
     spans = span_exporter.get_finished_spans()
     persist_spans = [s for s in spans if s.name == "generation.persist"]
     assert len(persist_spans) == 1
-    assert persist_spans[0].attributes["draft_id"] == str(_DRAFT_ID)
+    attributes = cast(dict[str, object], persist_spans[0].attributes or {})
+    assert attributes["draft_id"] == str(_DRAFT_ID)
 
 
 @pytest.mark.asyncio
@@ -333,9 +417,8 @@ async def test_generate_pipeline_span_error_on_llm_failure(
         provider_side_effect=LLMProviderError("Connection refused")
     )
 
-    with patch("app.services.generation_service.asyncio.create_task"):
-        with pytest.raises(GenerationError):
-            await service.generate(_CLIENT_ID, "review_due")
+    with pytest.raises(GenerationError):
+        await service.generate(_CLIENT_ID, "review_due")
 
     spans = span_exporter.get_finished_spans()
     pipeline_spans = [s for s in spans if s.name == "generation.pipeline"]

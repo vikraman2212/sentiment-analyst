@@ -13,6 +13,7 @@ Usage::
 import asyncio
 import json
 import uuid
+from time import perf_counter
 
 import structlog
 from opentelemetry import trace
@@ -24,6 +25,7 @@ from app.core.config import settings
 from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMProvider
 from app.core.prompts import EXTRACTION_PROMPT_TEMPLATE
+from app.core.telemetry import record_extraction_run
 from app.dependencies.llm import get_llm_provider
 from app.repositories.client_context import ClientContextRepository
 from app.schemas.client_context import ClientContextCreate, ContextCategory
@@ -79,48 +81,27 @@ class ExtractionService:
         Raises:
             ExtractionError: If the LLM returns invalid JSON on all attempts.
         """
+        started_at = perf_counter()
+        saved_count = 0
+        status = "error"
         log = logger.bind(
             client_id=str(client_id),
             interaction_id=str(interaction_id),
         )
         log.info("extraction_started")
 
-        prompt = EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
-        model = settings.OLLAMA_EXTRACTION_MODEL
+        try:
+            prompt = EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
+            model = settings.OLLAMA_EXTRACTION_MODEL
 
-        with _tracer.start_as_current_span("extraction.pipeline") as pipeline_span:
-            pipeline_span.set_attribute("client_id", str(client_id))
-            pipeline_span.set_attribute("interaction_id", str(interaction_id))
+            with _tracer.start_as_current_span("extraction.pipeline") as pipeline_span:
+                pipeline_span.set_attribute("client_id", str(client_id))
+                pipeline_span.set_attribute("interaction_id", str(interaction_id))
 
-            with _tracer.start_as_current_span("extraction.llm_attempt") as attempt_span:
-                attempt_span.set_attribute("attempt", 1)
-                result1 = await self._provider.complete(prompt, format="json", model=model)
-                tags = self._parse_and_validate(result1.response, log, attempt=1)
-                attempt_span.set_attribute("parse_success", tags is not None)
-            asyncio.create_task(
-                llm_audit_logger.log(
-                    make_audit_event(
-                        pipeline="extraction",
-                        client_id=client_id,
-                        model=model,
-                        prompt=result1.prompt,
-                        response=result1.response,
-                        status="success" if tags is not None else "error",
-                        latency_ms=result1.latency_ms,
-                        prompt_tokens=result1.prompt_tokens,
-                        completion_tokens=result1.completion_tokens,
-                        error=None if tags is not None else "invalid_json_attempt_1",
-                    )
-                )
-            )
-
-            if tags is None:
-                log.warning("extraction_retry", reason="invalid_json_first_attempt")
-                pipeline_span.add_event("extraction.retry", {"reason": "invalid_json_first_attempt"})
                 with _tracer.start_as_current_span("extraction.llm_attempt") as attempt_span:
-                    attempt_span.set_attribute("attempt", 2)
-                    result2 = await self._provider.complete(prompt, format="json", model=model)
-                    tags = self._parse_and_validate(result2.response, log, attempt=2)
+                    attempt_span.set_attribute("attempt", 1)
+                    result1 = await self._provider.complete(prompt, format="json", model=model)
+                    tags = self._parse_and_validate(result1.response, log, attempt=1)
                     attempt_span.set_attribute("parse_success", tags is not None)
                 asyncio.create_task(
                     llm_audit_logger.log(
@@ -128,38 +109,72 @@ class ExtractionService:
                             pipeline="extraction",
                             client_id=client_id,
                             model=model,
-                            prompt=result2.prompt,
-                            response=result2.response,
+                            prompt=result1.prompt,
+                            response=result1.response,
                             status="success" if tags is not None else "error",
-                            latency_ms=result2.latency_ms,
-                            prompt_tokens=result2.prompt_tokens,
-                            completion_tokens=result2.completion_tokens,
-                            error=None if tags is not None else "invalid_json_attempt_2",
+                            latency_ms=result1.latency_ms,
+                            prompt_tokens=result1.prompt_tokens,
+                            completion_tokens=result1.completion_tokens,
+                            error=None if tags is not None else "invalid_json_attempt_1",
                         )
                     )
                 )
 
-            if tags is None:
-                pipeline_span.set_status(
-                    StatusCode.ERROR, "LLM returned invalid JSON after 2 attempts"
-                )
-                raise ExtractionError(
-                    "LLM returned invalid JSON after 2 attempts"
-                )
+                if tags is None:
+                    log.warning("extraction_retry", reason="invalid_json_first_attempt")
+                    pipeline_span.add_event("extraction.retry", {"reason": "invalid_json_first_attempt"})
+                    with _tracer.start_as_current_span("extraction.llm_attempt") as attempt_span:
+                        attempt_span.set_attribute("attempt", 2)
+                        result2 = await self._provider.complete(prompt, format="json", model=model)
+                        tags = self._parse_and_validate(result2.response, log, attempt=2)
+                        attempt_span.set_attribute("parse_success", tags is not None)
+                    asyncio.create_task(
+                        llm_audit_logger.log(
+                            make_audit_event(
+                                pipeline="extraction",
+                                client_id=client_id,
+                                model=model,
+                                prompt=result2.prompt,
+                                response=result2.response,
+                                status="success" if tags is not None else "error",
+                                latency_ms=result2.latency_ms,
+                                prompt_tokens=result2.prompt_tokens,
+                                completion_tokens=result2.completion_tokens,
+                                error=None if tags is not None else "invalid_json_attempt_2",
+                            )
+                        )
+                    )
 
-            valid_payloads = self._filter_valid_tags(tags, client_id, interaction_id, log)
-            if not valid_payloads:
-                pipeline_span.set_attribute("tags_saved", 0)
-                log.info("extraction_complete", saved=0)
-                return 0
+                if tags is None:
+                    pipeline_span.set_status(
+                        StatusCode.ERROR, "LLM returned invalid JSON after 2 attempts"
+                    )
+                    raise ExtractionError(
+                        "LLM returned invalid JSON after 2 attempts"
+                    )
 
-            with _tracer.start_as_current_span("extraction.persist") as persist_span:
-                saved = await ClientContextRepository(db).bulk_create(valid_payloads)
-                persist_span.set_attribute("tags_saved", len(saved))
+                valid_payloads = self._filter_valid_tags(tags, client_id, interaction_id, log)
+                if not valid_payloads:
+                    pipeline_span.set_attribute("tags_saved", 0)
+                    status = "success"
+                    log.info("extraction_complete", saved=0)
+                    return 0
 
-            pipeline_span.set_attribute("tags_saved", len(saved))
-            log.info("extraction_complete", saved=len(saved))
-            return len(saved)
+                with _tracer.start_as_current_span("extraction.persist") as persist_span:
+                    saved = await ClientContextRepository(db).bulk_create(valid_payloads)
+                    persist_span.set_attribute("tags_saved", len(saved))
+
+                saved_count = len(saved)
+                pipeline_span.set_attribute("tags_saved", saved_count)
+                status = "success"
+                log.info("extraction_complete", saved=saved_count)
+                return saved_count
+        finally:
+            record_extraction_run(
+                status=status,
+                duration_seconds=perf_counter() - started_at,
+                saved_count=saved_count,
+            )
 
     def _parse_and_validate(
         self,

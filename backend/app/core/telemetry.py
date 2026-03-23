@@ -12,6 +12,7 @@ spans/metrics and release exporter resources.
 from __future__ import annotations
 
 import structlog
+from fastapi import FastAPI, Response
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
@@ -19,6 +20,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest  # type: ignore[import-not-found]
 
 from app.core.config import settings
 
@@ -27,6 +29,64 @@ logger = structlog.get_logger(__name__)
 # Module-level references kept for shutdown; None when telemetry is disabled.
 _tracer_provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
+
+_EXTRACTION_REQUESTS = Counter(
+    "sentiment_extraction_requests_total",
+    "Total extraction pipeline executions by terminal status.",
+    ["status"],
+)
+_EXTRACTION_DURATION = Histogram(
+    "sentiment_extraction_duration_seconds",
+    "Extraction pipeline duration in seconds by terminal status.",
+    ["status"],
+)
+_EXTRACTION_TAGS_SAVED = Counter(
+    "sentiment_extraction_tags_saved_total",
+    "Total number of extracted tags persisted successfully.",
+)
+_GENERATION_REQUESTS = Counter(
+    "sentiment_generation_requests_total",
+    "Total generation pipeline executions by terminal status.",
+    ["status"],
+)
+_GENERATION_DURATION = Histogram(
+    "sentiment_generation_duration_seconds",
+    "Generation pipeline duration in seconds by terminal status.",
+    ["status"],
+)
+_SCHEDULER_RUNS = Counter(
+    "sentiment_scheduler_runs_total",
+    "Total scheduler fan-out runs by terminal status.",
+    ["status"],
+)
+_SCHEDULER_DURATION = Histogram(
+    "sentiment_scheduler_duration_seconds",
+    "Scheduler fan-out duration in seconds by terminal status.",
+    ["status"],
+)
+_SCHEDULER_MESSAGES_PUBLISHED = Counter(
+    "sentiment_scheduler_messages_published_total",
+    "Total generation messages published by the scheduler.",
+)
+_WORKER_MESSAGES = Counter(
+    "sentiment_worker_messages_processed_total",
+    "Total worker message executions by terminal status.",
+    ["status"],
+)
+_WORKER_DURATION = Histogram(
+    "sentiment_worker_processing_duration_seconds",
+    "Worker processing duration in seconds by terminal status.",
+    ["status"],
+)
+_QUEUE_PUBLISHED = Counter(
+    "sentiment_queue_messages_published_total",
+    "Total messages published to the queue backend.",
+    ["backend"],
+)
+_INMEMORY_QUEUE_DEPTH = Gauge(
+    "sentiment_inmemory_queue_depth_messages",
+    "Current buffered message count for the in-memory queue backend.",
+)
 
 
 def configure_telemetry() -> None:
@@ -80,6 +140,53 @@ def shutdown_telemetry() -> None:
         _meter_provider = None
 
 
+def register_metrics_endpoint(app: FastAPI) -> None:
+    """Expose a Prometheus-compatible metrics endpoint on the application."""
+
+    async def _metrics() -> Response:
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+    app.add_api_route("/metrics", _metrics, methods=["GET"], include_in_schema=False)
+
+
+def record_extraction_run(status: str, duration_seconds: float, saved_count: int = 0) -> None:
+    """Record metrics for one extraction pipeline execution."""
+    _EXTRACTION_REQUESTS.labels(status=status).inc()
+    _EXTRACTION_DURATION.labels(status=status).observe(duration_seconds)
+    if saved_count > 0:
+        _EXTRACTION_TAGS_SAVED.inc(saved_count)
+
+
+def record_generation_run(status: str, duration_seconds: float) -> None:
+    """Record metrics for one generation pipeline execution."""
+    _GENERATION_REQUESTS.labels(status=status).inc()
+    _GENERATION_DURATION.labels(status=status).observe(duration_seconds)
+
+
+def record_scheduler_run(status: str, duration_seconds: float, published_count: int) -> None:
+    """Record metrics for one scheduler fan-out execution."""
+    _SCHEDULER_RUNS.labels(status=status).inc()
+    _SCHEDULER_DURATION.labels(status=status).observe(duration_seconds)
+    if published_count > 0:
+        _SCHEDULER_MESSAGES_PUBLISHED.inc(published_count)
+
+
+def record_worker_run(status: str, duration_seconds: float) -> None:
+    """Record metrics for one worker message execution."""
+    _WORKER_MESSAGES.labels(status=status).inc()
+    _WORKER_DURATION.labels(status=status).observe(duration_seconds)
+
+
+def record_queue_publish(backend: str) -> None:
+    """Increment the publish counter for the selected queue backend."""
+    _QUEUE_PUBLISHED.labels(backend=backend).inc()
+
+
+def set_inmemory_queue_depth(depth: int) -> None:
+    """Track current in-memory queue buffer size."""
+    _INMEMORY_QUEUE_DEPTH.set(depth)
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -94,7 +201,7 @@ def _build_tracer_provider(resource: Resource) -> TracerProvider:
     Returns:
         A configured TracerProvider ready to be set as the global provider.
     """
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore[import-not-found]
 
     exporter = OTLPSpanExporter(endpoint=f"{settings.OTEL_ENDPOINT}/v1/traces")
     provider = TracerProvider(resource=resource)
@@ -111,7 +218,7 @@ def _build_meter_provider(resource: Resource) -> MeterProvider:
     Returns:
         A configured MeterProvider ready to be set as the global provider.
     """
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter  # type: ignore[import-not-found]
 
     exporter = OTLPMetricExporter(endpoint=f"{settings.OTEL_ENDPOINT}/v1/metrics")
     reader = PeriodicExportingMetricReader(exporter)
@@ -125,9 +232,9 @@ def _instrument_libraries() -> None:
     calling this function more than once (e.g., in tests) is safe and will
     not register duplicate spans or metrics.
     """
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
+    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor  # type: ignore[import-not-found]
+    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor  # type: ignore[import-not-found]
 
     FastAPIInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()
