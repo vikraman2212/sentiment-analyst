@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.core.exceptions import GenerationError, LLMProviderError
 from app.core.llm_provider import LLMProvider
 from app.core.prompts import GENERATION_SYSTEM_PROMPT
-from app.core.telemetry import record_generation_run
+from app.core.telemetry import record_generation_run, record_llm_metrics
 from app.dependencies.llm import get_llm_provider
 from app.models.message_draft import MessageDraft
 from app.schemas.message_draft import MessageDraftCreate
@@ -117,6 +117,17 @@ class GenerationService:
                     log.error("generation_llm_failed", error=exc.detail, exc_info=True)
                     pipeline_span.record_exception(exc)
                     pipeline_span.set_status(StatusCode.ERROR, exc.detail)
+                    _span_ctx = pipeline_span.get_span_context()
+                    _trace_id = format(_span_ctx.trace_id, "032x") if _span_ctx.is_valid else None
+                    _span_id = format(_span_ctx.span_id, "016x") if _span_ctx.is_valid else None
+                    record_llm_metrics(
+                        pipeline="generation",
+                        model=model,
+                        status="error",
+                        duration_seconds=0.0,
+                        prompt_tokens=None,
+                        completion_tokens=None,
+                    )
                     asyncio.create_task(
                         llm_audit_logger.log(
                             make_audit_event(
@@ -130,6 +141,8 @@ class GenerationService:
                                 prompt_tokens=None,
                                 completion_tokens=None,
                                 error=exc.detail,
+                                trace_id=_trace_id,
+                                span_id=_span_id,
                             )
                         )
                     )
@@ -143,6 +156,17 @@ class GenerationService:
                     chars=len(generated_content),
                 )
 
+                _span_ctx = pipeline_span.get_span_context()
+                _trace_id = format(_span_ctx.trace_id, "032x") if _span_ctx.is_valid else None
+                _span_id = format(_span_ctx.span_id, "016x") if _span_ctx.is_valid else None
+                record_llm_metrics(
+                    pipeline="generation",
+                    model=model,
+                    status="success",
+                    duration_seconds=result.latency_ms / 1000.0,
+                    prompt_tokens=result.prompt_tokens,
+                    completion_tokens=result.completion_tokens,
+                )
                 asyncio.create_task(
                     llm_audit_logger.log(
                         make_audit_event(
@@ -156,6 +180,8 @@ class GenerationService:
                             prompt_tokens=result.prompt_tokens,
                             completion_tokens=result.completion_tokens,
                             error=None,
+                            trace_id=_trace_id,
+                            span_id=_span_id,
                         )
                     )
                 )

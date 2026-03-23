@@ -18,6 +18,8 @@ import asyncio
 from time import perf_counter
 
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from app.core.message_queue import MessageQueue
 from app.core.telemetry import record_worker_run
@@ -27,6 +29,7 @@ from app.repositories.generation_failure import GenerationFailureRepository
 from app.services.generation_service import GenerationService
 
 logger = structlog.get_logger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 
 class GenerationWorker:
@@ -77,9 +80,15 @@ class GenerationWorker:
             log.info("generation_worker_processing")
 
             try:
-                async with AsyncSessionLocal() as db:
-                    svc = GenerationService(db)
-                    await svc.generate(message.client_id, message.trigger_type)
+                _remote_ctx = TraceContextTextMapPropagator().extract(message.trace_context)
+                with _tracer.start_as_current_span(
+                    "generation.worker.process", context=_remote_ctx
+                ) as worker_span:
+                    worker_span.set_attribute("client_id", str(message.client_id))
+                    worker_span.set_attribute("trigger_type", message.trigger_type)
+                    async with AsyncSessionLocal() as db:
+                        svc = GenerationService(db)
+                        await svc.generate(message.client_id, message.trigger_type)
 
                 await self._queue.ack(message.message_id)
                 status = "success"

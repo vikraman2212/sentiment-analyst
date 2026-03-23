@@ -19,6 +19,7 @@ from __future__ import annotations
 from time import perf_counter
 
 import structlog
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from app.core.message_queue import GenerationMessage, MessageQueue
 from app.core.telemetry import record_scheduler_run
@@ -85,6 +86,7 @@ class SchedulerService:
                             advisor_id=advisor.id,
                             trigger_type="review_due",
                         )
+                        TraceContextTextMapPropagator().inject(message.trace_context)
                         await self._queue.publish(message)
                         total_published += 1
                         log.info(
