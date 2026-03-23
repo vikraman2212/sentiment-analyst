@@ -18,7 +18,6 @@ from app.schemas.context_assembly import AssembledContext, FinancialSummary
 from app.services.scheduler import SchedulerService
 from tests.services.conftest import get_metric_value
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -222,3 +221,68 @@ async def test_publish_advisor_failure_continues_to_next() -> None:
     msg: GenerationMessage = queue.publish.call_args.args[0]
     assert msg.client_id == _CLIENT_A
     assert msg.advisor_id == advisor_ok_id
+
+
+@pytest.mark.asyncio
+async def test_publish_message_has_dict_trace_context_carrier() -> None:
+    """Each published GenerationMessage carries a dict trace_context carrier."""
+    queue = _make_queue()
+    svc = SchedulerService(queue=queue)
+
+    with (
+        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
+        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
+        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
+    ):
+        mock_db = AsyncMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        advisor_repo = AsyncMock()
+        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
+        mock_advisor_repo_cls.return_value = advisor_repo
+
+        context_svc = AsyncMock()
+        context_svc.list_needing_review = AsyncMock(return_value=[_make_context(_CLIENT_A)])
+        mock_context_svc_cls.return_value = context_svc
+
+        await svc.publish_pending_generations()
+
+    msg: GenerationMessage = queue.publish.call_args.args[0]
+    assert isinstance(msg.trace_context, dict)
+
+
+@pytest.mark.asyncio
+async def test_publish_injects_active_span_into_message_trace_context() -> None:
+    """When an active OTel span is present, its traceparent is injected into each message."""
+    from tests.services.conftest import make_span_exporter
+
+    _, provider = make_span_exporter()
+    tracer = provider.get_tracer(__name__)
+
+    queue = _make_queue()
+    svc = SchedulerService(queue=queue)
+
+    with (
+        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
+        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
+        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
+    ):
+        mock_db = AsyncMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        advisor_repo = AsyncMock()
+        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
+        mock_advisor_repo_cls.return_value = advisor_repo
+
+        context_svc = AsyncMock()
+        context_svc.list_needing_review = AsyncMock(return_value=[_make_context(_CLIENT_A)])
+        mock_context_svc_cls.return_value = context_svc
+
+        # Activate a real span so the propagator has something to inject.
+        with tracer.start_as_current_span("test.scheduler.parent"):
+            await svc.publish_pending_generations()
+
+    msg: GenerationMessage = queue.publish.call_args.args[0]
+    assert "traceparent" in msg.trace_context
