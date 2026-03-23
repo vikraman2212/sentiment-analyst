@@ -10,7 +10,7 @@ Concrete implementations live in ``app/services/``.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Protocol, runtime_checkable
 
 
@@ -22,6 +22,7 @@ class GenerationMessage:
     advisor_id: uuid.UUID
     trigger_type: str
     message_id: str = ""  # Populated by the queue implementation on publish
+    trace_context: dict[str, str] = field(default_factory=dict)  # W3C TraceContext carrier
 
 
 @runtime_checkable

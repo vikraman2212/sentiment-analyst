@@ -25,7 +25,7 @@ from app.core.config import settings
 from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMProvider
 from app.core.prompts import EXTRACTION_PROMPT_TEMPLATE
-from app.core.telemetry import record_extraction_run
+from app.core.telemetry import record_extraction_run, record_llm_metrics
 from app.dependencies.llm import get_llm_provider
 from app.repositories.client_context import ClientContextRepository
 from app.schemas.client_context import ClientContextCreate, ContextCategory
@@ -103,6 +103,18 @@ class ExtractionService:
                     result1 = await self._provider.complete(prompt, format="json", model=model)
                     tags = self._parse_and_validate(result1.response, log, attempt=1)
                     attempt_span.set_attribute("parse_success", tags is not None)
+                    _llm_status = "success" if tags is not None else "error"
+                    _span_ctx = attempt_span.get_span_context()
+                    _trace_id = format(_span_ctx.trace_id, "032x") if _span_ctx.is_valid else None
+                    _span_id = format(_span_ctx.span_id, "016x") if _span_ctx.is_valid else None
+                    record_llm_metrics(
+                        pipeline="extraction",
+                        model=model,
+                        status=_llm_status,
+                        duration_seconds=result1.latency_ms / 1000.0,
+                        prompt_tokens=result1.prompt_tokens,
+                        completion_tokens=result1.completion_tokens,
+                    )
                 asyncio.create_task(
                     llm_audit_logger.log(
                         make_audit_event(
@@ -111,11 +123,13 @@ class ExtractionService:
                             model=model,
                             prompt=result1.prompt,
                             response=result1.response,
-                            status="success" if tags is not None else "error",
+                            status=_llm_status,
                             latency_ms=result1.latency_ms,
                             prompt_tokens=result1.prompt_tokens,
                             completion_tokens=result1.completion_tokens,
                             error=None if tags is not None else "invalid_json_attempt_1",
+                            trace_id=_trace_id,
+                            span_id=_span_id,
                         )
                     )
                 )
@@ -128,6 +142,18 @@ class ExtractionService:
                         result2 = await self._provider.complete(prompt, format="json", model=model)
                         tags = self._parse_and_validate(result2.response, log, attempt=2)
                         attempt_span.set_attribute("parse_success", tags is not None)
+                        _llm_status = "success" if tags is not None else "error"
+                        _span_ctx = attempt_span.get_span_context()
+                        _trace_id = format(_span_ctx.trace_id, "032x") if _span_ctx.is_valid else None
+                        _span_id = format(_span_ctx.span_id, "016x") if _span_ctx.is_valid else None
+                        record_llm_metrics(
+                            pipeline="extraction",
+                            model=model,
+                            status=_llm_status,
+                            duration_seconds=result2.latency_ms / 1000.0,
+                            prompt_tokens=result2.prompt_tokens,
+                            completion_tokens=result2.completion_tokens,
+                        )
                     asyncio.create_task(
                         llm_audit_logger.log(
                             make_audit_event(
@@ -136,11 +162,13 @@ class ExtractionService:
                                 model=model,
                                 prompt=result2.prompt,
                                 response=result2.response,
-                                status="success" if tags is not None else "error",
+                                status=_llm_status,
                                 latency_ms=result2.latency_ms,
                                 prompt_tokens=result2.prompt_tokens,
                                 completion_tokens=result2.completion_tokens,
                                 error=None if tags is not None else "invalid_json_attempt_2",
+                                trace_id=_trace_id,
+                                span_id=_span_id,
                             )
                         )
                     )

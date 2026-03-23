@@ -45,6 +45,8 @@ class LLMAuditEvent:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     error: str | None = None
+    trace_id: str | None = None
+    span_id: str | None = None
 
 
 class LLMAuditLogger:
@@ -90,6 +92,8 @@ def make_audit_event(
     prompt_tokens: int | None,
     completion_tokens: int | None,
     error: str | None = None,
+    trace_id: str | None = None,
+    span_id: str | None = None,
 ) -> LLMAuditEvent:
     """Convenience constructor that converts UUID to str.
 
@@ -104,6 +108,8 @@ def make_audit_event(
         prompt_tokens: Number of prompt tokens evaluated (from Ollama body).
         completion_tokens: Number of completion tokens generated (from Ollama body).
         error: Optional error message for failed calls.
+        trace_id: Active OTel trace ID as 32-char hex string, or ``None``.
+        span_id: Active OTel span ID as 16-char hex string, or ``None``.
 
     Returns:
         A populated LLMAuditEvent ready to pass to ``llm_audit_logger.log()``.
@@ -119,4 +125,6 @@ def make_audit_event(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         error=error,
+        trace_id=trace_id,
+        span_id=span_id,
     )

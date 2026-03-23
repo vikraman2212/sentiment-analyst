@@ -73,6 +73,7 @@ class RedisStreamQueue:
             "advisor_id": str(message.advisor_id),
             "trigger_type": message.trigger_type,
         }
+        payload.update(message.trace_context)
         entry_id: str = await client.xadd(_STREAM_KEY, payload)  # type: ignore[assignment,arg-type]
         message.message_id = entry_id
         record_queue_publish("redis")
@@ -100,11 +101,17 @@ class RedisStreamQueue:
 
             for _stream, messages in entries:
                 for entry_id, fields in messages:
+                    _tc: dict[str, str] = {}
+                    if "traceparent" in fields:
+                        _tc["traceparent"] = fields["traceparent"]
+                    if "tracestate" in fields:
+                        _tc["tracestate"] = fields["tracestate"]
                     msg = GenerationMessage(
                         client_id=uuid.UUID(fields["client_id"]),
                         advisor_id=uuid.UUID(fields["advisor_id"]),
                         trigger_type=fields["trigger_type"],
                         message_id=entry_id,
+                        trace_context=_tc,
                     )
                     logger.info(
                         "redis_stream_consume",
