@@ -6,7 +6,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs stack-up stack-down stack-logs stack-migrate backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
@@ -16,6 +16,20 @@ infra-down:
 
 infra-logs:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example logs -f
+
+# Full stack — infrastructure + backend API (including Alembic migrations on startup)
+stack-up:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend up -d --build
+
+stack-down:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend down
+
+stack-logs:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend logs -f
+
+# Run only the Alembic migration step inside the compose network (one-shot container)
+stack-migrate:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend run --rm backend alembic upgrade head
 
 backend-install:
 	cd $(BACKEND_DIR) && uv sync

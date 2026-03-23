@@ -12,12 +12,13 @@ For the full startup flow, use the root [README.md](../README.md). This file foc
 - MinIO
 - Jaeger (OTLP trace ingestion + UI)
 - Prometheus (metrics scraping)
+- **Backend** (FastAPI API server — added in Sprint 5)
 
 ## Service Not In Compose
 
-- Ollama is intentionally not defined here. It must run on the host machine at `http://localhost:11434`.
+- Ollama is intentionally not defined here. It must run on the host machine at `http://localhost:11434`. The backend service reaches it via `host.docker.internal:11434`.
 
-## Start Infra
+## Start Infrastructure Only (no backend)
 
 From the repository root:
 
@@ -31,22 +32,38 @@ Direct Compose command:
 docker compose -f infra/docker-compose.yml --env-file infra/.env.example up -d
 ```
 
-## Stop Infra
+## Start Full Stack (infrastructure + backend)
 
 ```bash
-make infra-down
+make stack-up
 ```
+
+This activates the `backend` Compose profile, builds the backend image (if needed), waits for postgres/opensearch/minio health checks to pass, runs Alembic migrations, and then starts the API server on port 8000.
 
 Direct Compose command:
 
 ```bash
-docker compose -f infra/docker-compose.yml --env-file infra/.env.example down
+docker compose -f infra/docker-compose.yml --env-file infra/.env.example --profile backend up -d --build
+```
+
+## Stop
+
+```bash
+# Infra only
+make infra-down
+
+# Full stack
+make stack-down
 ```
 
 ## Stream Logs
 
 ```bash
+# Infra only
 make infra-logs
+
+# Full stack
+make stack-logs
 ```
 
 ## Connection Details
@@ -76,14 +93,14 @@ make infra-logs
 - UI: `http://localhost:16686`
 - OTLP gRPC: `localhost:4317`
 - OTLP HTTP: `http://localhost:4318`
-- Enable in the backend via `OTEL_ENABLED=true` and `OTEL_ENDPOINT=http://localhost:4318`
+- Enable in the backend via `OTEL_ENABLED=true` in `infra/.env.example` (defaults to the `jaeger` service inside compose)
 
 ### Prometheus (Metrics)
 
 - UI / query: `http://localhost:9090`
 - Scrapes the backend `/metrics` endpoint every 15 s
-- Scrape target configured in `infra/prometheus/prometheus.yml`
-- Core application metrics include extraction, generation, scheduler, worker, and queue publish signals
+- When the backend runs in compose the scrape target is `backend:8000` (the compose service name)
+- If you run the backend on the host instead, set the target to `host.docker.internal:8000` in `infra/prometheus/prometheus.yml`
 
 ### OpenSearch Dashboards (Visualisation)
 
@@ -91,18 +108,42 @@ make infra-logs
 - Use this to build index-pattern dashboards over the `llm-audit-*` index
 - No Grafana needed — OpenSearch Dashboards ships bundled with the existing OpenSearch container
 
+### Backend API (when running in compose)
+
+- Docs: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
+- Readiness: `http://localhost:8000/health/ready`
+
+## Environment Variables
+
+Copy `infra/.env.example` to `infra/.env` to override defaults. Key variables:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `POSTGRES_USER` | `admin` | |
+| `POSTGRES_PASSWORD` | `localpassword` | |
+| `POSTGRES_DB` | `advisor_db` | |
+| `POSTGRES_PORT` | `5432` | Change if local port 5432 is occupied |
+| `MINIO_ACCESS_KEY` | `minioadmin` | Must match MinIO container credentials |
+| `MINIO_SECRET_KEY` | `minioadmin` | Must match MinIO container credentials |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama runs on the host |
+| `OLLAMA_EXTRACTION_MODEL` | `llama3.2` | |
+| `OLLAMA_GENERATION_MODEL` | `llama3.2` | |
+| `LOG_LEVEL` | `INFO` | |
+| `WHISPER_MODEL` | `base.en` | |
+| `SCHEDULER_SECRET` | `change-me-in-production` | Used to authenticate the scheduler trigger endpoint |
+| `OTEL_ENABLED` | `false` | Set to `true` to export traces to Jaeger |
+| `OTEL_ENDPOINT` | `http://jaeger:4318` | OTLP HTTP collector; defaults to the Jaeger compose service |
+
 ## Notes
 
 - OpenSearch security is disabled for local development.
-- If port `5432` is already in use, override it when starting Compose:
-
-```bash
-POSTGRES_PORT=5433 docker compose -f infra/docker-compose.yml --env-file infra/.env.example up -d postgres
-```
+- If port `5432` is already in use, set `POSTGRES_PORT=5433` (or another free port) in `infra/.env.example` before running compose.
+- The backend container reaches Ollama on the host via `host.docker.internal`. On Linux, the `extra_hosts` entry in the compose file maps this to the host gateway automatically. On macOS/Windows with Docker Desktop it resolves by default.
 
 ## Observability Verification
 
-After `make infra-up`, verify each observability service is reachable:
+After `make stack-up`, verify each observability service is reachable:
 
 ```bash
 # Jaeger UI
@@ -118,11 +159,10 @@ open http://localhost:9090/graph
 open http://localhost:5601
 ```
 
-To test the OTLP trace pipeline, set these env vars in the backend and send a request:
+To test the OTLP trace pipeline, set `OTEL_ENABLED=true` in `infra/.env.example` and restart the stack:
 
 ```bash
-OTEL_ENABLED=true
-OTEL_ENDPOINT=http://localhost:4318
+make stack-down && make stack-up
 ```
 
 Traces will appear in the Jaeger UI under the `sentiment-analyst-backend` service name.
@@ -134,15 +174,14 @@ To verify backend metrics, exercise an upload or generation flow and query examp
 - `sentiment_scheduler_runs_total`
 - `sentiment_worker_messages_processed_total`
 
-## Backend Networking Hints
+## Backend Networking Notes
 
-If the backend runs on the host machine:
+Inside Compose, service-to-service URLs use compose service names:
 
-- `DATABASE_URL=postgresql+psycopg://admin:localpassword@localhost:5432/advisor_db`
-- `MINIO_ENDPOINT=http://localhost:9000`
-- `OLLAMA_BASE_URL=http://localhost:11434`
+- `DATABASE_URL=postgresql+psycopg://admin:localpassword@postgres:5432/advisor_db`
+- `MINIO_ENDPOINT=http://minio:9000`
+- `OPENSEARCH_URL=http://opensearch:9200`
+- `OTEL_ENDPOINT=http://jaeger:4318`
 
-If the backend runs in Docker:
+These are resolved automatically by the Docker compose network and are set in the backend service environment in `docker-compose.yml`.
 
-- the hostnames in `DATABASE_URL`, `MINIO_ENDPOINT`, and `OLLAMA_BASE_URL` should use `host.docker.internal`
-- the root Makefile derives these Docker-safe values from `backend/.env`

@@ -11,6 +11,9 @@ Local-first advisor sentiment workflow with a Flutter client, a FastAPI backend,
   - OpenSearch
   - OpenSearch Dashboards
   - MinIO
+  - Jaeger
+  - Prometheus
+  - **Backend API** (FastAPI — optional, see Option C below)
 - Ollama runs on the host machine at `http://localhost:11434`
 
 ## Flutter App Network Configuration
@@ -107,7 +110,7 @@ make backend-run
 
 The API will be available at `http://localhost:8000`.
 
-## Option B: Run Backend In Docker
+## Option B: Run Backend In Docker (standalone)
 
 This mode still expects Ollama to run on the host machine.
 
@@ -138,6 +141,48 @@ In Docker mode, the Makefile reads `backend/.env` and rewrites localhost-based e
 - `MINIO_ENDPOINT` host is rewritten from `localhost` to `host.docker.internal`
 
 The `--add-host=host.docker.internal:host-gateway` flag is included for Linux compatibility. On macOS with Docker Desktop, `host.docker.internal` is available by default.
+
+## Option C: Full Docker Compose Stack (infrastructure + backend)
+
+This option brings up **all** services — infrastructure and the FastAPI backend — from a single Compose command. No separate `backend/.env` is needed; all backend environment variables are resolved from `infra/.env.example`.
+
+**Prerequisites:** Ollama must still run on the host machine at `http://localhost:11434`.
+
+1. Ensure Ollama is running:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+2. Bring up the full stack (builds the backend image, activates the `backend` Compose profile which waits for healthy dependencies, then runs migrations and starts the API):
+
+```bash
+make stack-up
+```
+
+3. Verify all services are reachable:
+
+```bash
+make verify
+```
+
+The API will be available at `http://localhost:8000`.
+
+### Startup Order
+
+The backend service depends on health checks from postgres, opensearch, and minio before it starts. On first start, `alembic upgrade head` runs automatically inside the backend container before uvicorn is launched.
+
+### Stopping The Full Stack
+
+```bash
+make stack-down
+```
+
+### Logs
+
+```bash
+make stack-logs
+```
 
 ## Run The Flutter App
 
@@ -205,15 +250,28 @@ Resetting the volume is destructive to local database contents.
 ## Common Commands
 
 ```bash
+# Infrastructure only
 make infra-up
 make infra-down
 make infra-logs
+
+# Full stack (infrastructure + backend)
+make stack-up
+make stack-down
+make stack-logs
+make stack-migrate
+
+# Backend on host
 make backend-run
 make backend-docker-build
 make backend-docker-run
+
+# Frontend
 make frontend-run
 make frontend-analyze
 make frontend-test
+
+# Verify endpoints
 make verify
 ```
 
