@@ -9,6 +9,8 @@ import uuid
 from datetime import date, timedelta
 
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -22,6 +24,8 @@ from app.schemas.client_context import ClientContextResponse
 from app.schemas.context_assembly import AssembledContext, FinancialSummary
 
 logger = structlog.get_logger(__name__)
+
+_tracer = trace.get_tracer(__name__)
 
 _CATEGORY_LABELS: dict[str, str] = {
     "personal_interest": "Personal Interests",
@@ -71,28 +75,34 @@ class ContextAssemblyService:
         log = self._log.bind(client_id=str(client_id))
         log.info("context_assembly_started")
 
-        client = await self._client_repo.get_by_id(client_id)
-        if client is None:
-            log.warning("context_assembly_client_not_found")
-            raise NotFoundError(f"Client {client_id} not found")
+        with _tracer.start_as_current_span("context.assembly") as span:
+            span.set_attribute("client_id", str(client_id))
 
-        profile = await self._profile_repo.get_by_client_id(client_id)
-        tags = await self._context_repo.list_by_client(client_id)
+            client = await self._client_repo.get_by_id(client_id)
+            if client is None:
+                log.warning("context_assembly_client_not_found")
+                span.set_status(StatusCode.ERROR, f"Client {client_id} not found")
+                raise NotFoundError(f"Client {client_id} not found")
 
-        financial_summary = _build_financial_summary(profile)
-        tag_responses = [
-            ClientContextResponse.model_validate(t, from_attributes=True) for t in tags
-        ]
-        prompt_block = self._format_prompt_block(client, financial_summary, tags)
+            profile = await self._profile_repo.get_by_client_id(client_id)
+            tags = await self._context_repo.list_by_client(client_id)
 
-        log.info("context_assembly_complete", tag_count=len(tags))
-        return AssembledContext(
-            client_id=client_id,
-            client_name=f"{client.first_name} {client.last_name}",
-            financial_summary=financial_summary,
-            context_tags=tag_responses,
-            prompt_block=prompt_block,
-        )
+            span.set_attribute("tag_count", len(tags))
+
+            financial_summary = _build_financial_summary(profile)
+            tag_responses = [
+                ClientContextResponse.model_validate(t, from_attributes=True) for t in tags
+            ]
+            prompt_block = self._format_prompt_block(client, financial_summary, tags)
+
+            log.info("context_assembly_complete", tag_count=len(tags))
+            return AssembledContext(
+                client_id=client_id,
+                client_name=f"{client.first_name} {client.last_name}",
+                financial_summary=financial_summary,
+                context_tags=tag_responses,
+                prompt_block=prompt_block,
+            )
 
     async def list_needing_review(
         self, advisor_id: uuid.UUID
