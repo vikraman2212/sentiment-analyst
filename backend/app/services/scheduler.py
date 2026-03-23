@@ -16,9 +16,12 @@ This function is called by:
 
 from __future__ import annotations
 
+from time import perf_counter
+
 import structlog
 
 from app.core.message_queue import GenerationMessage, MessageQueue
+from app.core.telemetry import record_scheduler_run
 from app.db.session import AsyncSessionLocal
 from app.dependencies.queue import get_queue
 from app.repositories.advisor import AdvisorRepository
@@ -47,45 +50,55 @@ class SchedulerService:
         Returns:
             The total number of ``GenerationMessage`` objects published.
         """
+        started_at = perf_counter()
+        status = "error"
+        total_published = 0
         log = logger.bind(job="publish_pending_generations")
         log.info("scheduler_publish_started")
 
-        total_published = 0
+        try:
+            async with AsyncSessionLocal() as db:
+                advisor_repo = AdvisorRepository(db)
+                advisors = await advisor_repo.list_all()
 
-        async with AsyncSessionLocal() as db:
-            advisor_repo = AdvisorRepository(db)
-            advisors = await advisor_repo.list_all()
+                if not advisors:
+                    status = "success"
+                    log.info("scheduler_publish_no_advisors")
+                    return 0
 
-            if not advisors:
-                log.info("scheduler_publish_no_advisors")
-                return 0
+                for advisor in advisors:
+                    context_svc = ContextAssemblyService(db)
+                    try:
+                        contexts = await context_svc.list_needing_review(advisor.id)
+                    except Exception as exc:
+                        log.error(
+                            "scheduler_publish_advisor_failed",
+                            advisor_id=str(advisor.id),
+                            error=str(exc),
+                            exc_info=True,
+                        )
+                        continue
 
-            for advisor in advisors:
-                context_svc = ContextAssemblyService(db)
-                try:
-                    contexts = await context_svc.list_needing_review(advisor.id)
-                except Exception as exc:
-                    log.error(
-                        "scheduler_publish_advisor_failed",
-                        advisor_id=str(advisor.id),
-                        error=str(exc),
-                        exc_info=True,
-                    )
-                    continue
+                    for ctx in contexts:
+                        message = GenerationMessage(
+                            client_id=ctx.client_id,
+                            advisor_id=advisor.id,
+                            trigger_type="review_due",
+                        )
+                        await self._queue.publish(message)
+                        total_published += 1
+                        log.info(
+                            "scheduler_message_published",
+                            client_id=str(ctx.client_id),
+                            advisor_id=str(advisor.id),
+                        )
 
-                for ctx in contexts:
-                    message = GenerationMessage(
-                        client_id=ctx.client_id,
-                        advisor_id=advisor.id,
-                        trigger_type="review_due",
-                    )
-                    await self._queue.publish(message)
-                    total_published += 1
-                    log.info(
-                        "scheduler_message_published",
-                        client_id=str(ctx.client_id),
-                        advisor_id=str(advisor.id),
-                    )
-
-        log.info("scheduler_publish_complete", total_published=total_published)
-        return total_published
+            status = "success"
+            log.info("scheduler_publish_complete", total_published=total_published)
+            return total_published
+        finally:
+            record_scheduler_run(
+                status=status,
+                duration_seconds=perf_counter() - started_at,
+                published_count=total_published,
+            )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import uuid
 
 import structlog
@@ -90,7 +91,7 @@ class ClientService:
         log.info("client_list_complete", count=len(clients))
         return [ClientListItem.model_validate(c) for c in clients]
 
-    async def list_by_advisor(self, advisor_id: uuid.UUID) -> list[Client]:
+    async def list_by_advisor(self, advisor_id: uuid.UUID) -> builtins.list[Client]:
         """Return all clients for the given advisor.
 
         Raises:

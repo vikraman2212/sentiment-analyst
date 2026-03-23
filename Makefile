@@ -6,7 +6,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs backend-venv backend-install backend-migrate backend-run backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
@@ -17,20 +17,23 @@ infra-down:
 infra-logs:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example logs -f
 
-backend-venv:
-	cd $(BACKEND_DIR) && python3 -m venv .venv
-
 backend-install:
-	cd $(BACKEND_DIR) && [ -d .venv ] || python3 -m venv .venv
-	cd $(BACKEND_DIR) && source .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt
+	cd $(BACKEND_DIR) && uv sync
 
 backend-migrate:
-	cd $(BACKEND_DIR) && [ -d .venv ] || python3 -m venv .venv
-	cd $(BACKEND_DIR) && source .venv/bin/activate && alembic upgrade head
+	cd $(BACKEND_DIR) && uv run alembic upgrade head
 
 backend-run:
-	cd $(BACKEND_DIR) && [ -d .venv ] || python3 -m venv .venv
-	cd $(BACKEND_DIR) && source .venv/bin/activate && uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+	cd $(BACKEND_DIR) && uv run uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+
+backend-test:
+	cd $(BACKEND_DIR) && uv run pytest tests/ -q
+
+backend-lint:
+	cd $(BACKEND_DIR) && uv run ruff check .
+
+backend-typecheck:
+	cd $(BACKEND_DIR) && uv run mypy .
 
 backend-docker-build:
 	docker build -t $(BACKEND_IMAGE) $(BACKEND_DIR)

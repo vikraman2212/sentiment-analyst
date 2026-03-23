@@ -83,6 +83,7 @@ make infra-logs
 - UI / query: `http://localhost:9090`
 - Scrapes the backend `/metrics` endpoint every 15 s
 - Scrape target configured in `infra/prometheus/prometheus.yml`
+- Core application metrics include extraction, generation, scheduler, worker, and queue publish signals
 
 ### OpenSearch Dashboards (Visualisation)
 
@@ -110,6 +111,9 @@ open http://localhost:16686
 # Prometheus targets (backend should appear as UP)
 open http://localhost:9090/targets
 
+# Prometheus graph (verify sentiment_* series are present)
+open http://localhost:9090/graph
+
 # OpenSearch Dashboards (LLM audit index visualisation)
 open http://localhost:5601
 ```
@@ -122,6 +126,13 @@ OTEL_ENDPOINT=http://localhost:4318
 ```
 
 Traces will appear in the Jaeger UI under the `sentiment-analyst-backend` service name.
+
+To verify backend metrics, exercise an upload or generation flow and query examples such as:
+
+- `sentiment_extraction_requests_total`
+- `sentiment_generation_requests_total`
+- `sentiment_scheduler_runs_total`
+- `sentiment_worker_messages_processed_total`
 
 ## Backend Networking Hints
 

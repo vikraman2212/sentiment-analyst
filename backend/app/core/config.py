@@ -56,4 +56,4 @@ class Settings(BaseSettings):
     OLLAMA_BACKOFF_FACTOR: float = 2.0  # Multiplier: waits 1s, 2s, 4s, …
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

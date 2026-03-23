@@ -19,7 +19,7 @@ async def create_interaction(
     payload: InteractionCreate,
     db: AsyncSession = Depends(get_db),
 ) -> InteractionResponse:
-    return await InteractionService(db).create(payload)
+    return InteractionResponse.model_validate(await InteractionService(db).create(payload))
 
 
 @router.get(
@@ -30,4 +30,5 @@ async def list_client_interactions(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> list[InteractionResponse]:
-    return await InteractionService(db).list_by_client(client_id)
+    interactions = await InteractionService(db).list_by_client(client_id)
+    return [InteractionResponse.model_validate(i) for i in interactions]

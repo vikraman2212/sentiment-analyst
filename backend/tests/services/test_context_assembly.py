@@ -5,8 +5,10 @@ Tests follow AAA (Arrange → Act → Assert) with blank lines between sections.
 """
 
 import uuid
+from collections.abc import Generator
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -194,7 +196,7 @@ async def test_list_needing_review_no_clients() -> None:
 
 
 @pytest.fixture(autouse=False)
-def span_exporter() -> InMemorySpanExporter:
+def span_exporter() -> Generator[InMemorySpanExporter, None, None]:
     """Fixture: wire a fresh in-memory exporter into the context assembly tracer."""
     exporter, provider = make_span_exporter()
     original = _context_assembly_mod._tracer
@@ -223,8 +225,9 @@ async def test_assemble_emits_context_assembly_span(
     assembly_spans = [s for s in spans if s.name == "context.assembly"]
     assert len(assembly_spans) == 1
     span = assembly_spans[0]
-    assert span.attributes["client_id"] == str(_CLIENT_ID)
-    assert span.attributes["tag_count"] == 2
+    attrs = cast(dict[str, object], span.attributes or {})
+    assert attrs["client_id"] == str(_CLIENT_ID)
+    assert attrs["tag_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -242,7 +245,7 @@ async def test_assemble_span_tag_count_zero_when_no_tags(
     spans = span_exporter.get_finished_spans()
     assembly_spans = [s for s in spans if s.name == "context.assembly"]
     assert len(assembly_spans) == 1
-    assert assembly_spans[0].attributes["tag_count"] == 0
+    assert cast(dict[str, object], assembly_spans[0].attributes or {})["tag_count"] == 0
 
 
 @pytest.mark.asyncio

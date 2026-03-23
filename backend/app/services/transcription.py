@@ -13,7 +13,7 @@ import asyncio
 import logging
 
 import structlog
-from faster_whisper import WhisperModel
+from faster_whisper import WhisperModel  # type: ignore[import-not-found]
 
 from app.core.config import settings
 

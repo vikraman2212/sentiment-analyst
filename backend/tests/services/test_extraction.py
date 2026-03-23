@@ -4,8 +4,11 @@ All external dependencies (LLMProvider, ClientContextRepository) are mocked so
 no network or database is required. Tests follow AAA (Arrange → Act → Assert).
 """
 
+from collections.abc import Generator
+
 import json
 import uuid
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,7 +19,7 @@ from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMResult
 from app.services.extraction import ExtractionService
 
-from tests.services.conftest import make_span_exporter
+from tests.services.conftest import get_metric_value, make_span_exporter
 
 
 # ---------------------------------------------------------------------------
@@ -173,13 +176,76 @@ async def test_empty_tags_array_returns_zero() -> None:
     mock_repo.bulk_create.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_extract_records_success_metrics() -> None:
+    """Successful extraction updates request, duration, and saved-tag metrics."""
+    provider = _make_provider([_VALID_JSON])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+    before_requests = get_metric_value(
+        "sentiment_extraction_requests_total",
+        {"status": "success"},
+    )
+    before_duration = get_metric_value(
+        "sentiment_extraction_duration_seconds_count",
+        {"status": "success"},
+    )
+    before_saved = get_metric_value("sentiment_extraction_tags_saved_total")
+
+    with patch("app.services.extraction.ClientContextRepository") as mock_repo_cls:
+        mock_repo = AsyncMock()
+        mock_repo.bulk_create = AsyncMock(return_value=[MagicMock(), MagicMock()])
+        mock_repo_cls.return_value = mock_repo
+
+        await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    assert get_metric_value(
+        "sentiment_extraction_requests_total",
+        {"status": "success"},
+    ) == before_requests + 1
+    assert get_metric_value(
+        "sentiment_extraction_duration_seconds_count",
+        {"status": "success"},
+    ) == before_duration + 1
+    assert get_metric_value("sentiment_extraction_tags_saved_total") == before_saved + 2
+
+
+@pytest.mark.asyncio
+async def test_extract_records_error_metrics() -> None:
+    """Failed extraction updates error request and duration metrics."""
+    provider = _make_provider(["JUNK OUTPUT {]", "STILL JUNK"])
+    service = _make_service(provider)
+    mock_db = AsyncMock()
+    before_requests = get_metric_value(
+        "sentiment_extraction_requests_total",
+        {"status": "error"},
+    )
+    before_duration = get_metric_value(
+        "sentiment_extraction_duration_seconds_count",
+        {"status": "error"},
+    )
+
+    with patch("app.services.extraction.ClientContextRepository"):
+        with pytest.raises(ExtractionError):
+            await service.extract("Transcript.", _CLIENT_ID, _INTERACTION_ID, mock_db)
+
+    assert get_metric_value(
+        "sentiment_extraction_requests_total",
+        {"status": "error"},
+    ) == before_requests + 1
+    assert get_metric_value(
+        "sentiment_extraction_duration_seconds_count",
+        {"status": "error"},
+    ) == before_duration + 1
+
+
 # ---------------------------------------------------------------------------
 # Span tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=False)
-def span_exporter() -> InMemorySpanExporter:
+def span_exporter() -> Generator[InMemorySpanExporter, None, None]:
     """Fixture: wire a fresh in-memory exporter into the extraction service tracer."""
     exporter, provider = make_span_exporter()
     original = _extraction_mod._tracer
@@ -206,9 +272,10 @@ async def test_extract_emits_pipeline_span(span_exporter: InMemorySpanExporter) 
     pipeline_spans = [s for s in spans if s.name == "extraction.pipeline"]
     assert len(pipeline_spans) == 1
     span = pipeline_spans[0]
-    assert span.attributes["client_id"] == str(_CLIENT_ID)
-    assert span.attributes["interaction_id"] == str(_INTERACTION_ID)
-    assert span.attributes["tags_saved"] == 2
+    attributes = cast(dict[str, object], span.attributes or {})
+    assert attributes["client_id"] == str(_CLIENT_ID)
+    assert attributes["interaction_id"] == str(_INTERACTION_ID)
+    assert attributes["tags_saved"] == 2
 
 
 @pytest.mark.asyncio
@@ -228,8 +295,9 @@ async def test_extract_emits_llm_attempt_span(span_exporter: InMemorySpanExporte
     spans = span_exporter.get_finished_spans()
     attempt_spans = [s for s in spans if s.name == "extraction.llm_attempt"]
     assert len(attempt_spans) == 1
-    assert attempt_spans[0].attributes["attempt"] == 1
-    assert attempt_spans[0].attributes["parse_success"] is True
+    attributes = cast(dict[str, object], attempt_spans[0].attributes or {})
+    assert attributes["attempt"] == 1
+    assert attributes["parse_success"] is True
 
 
 @pytest.mark.asyncio
@@ -249,10 +317,12 @@ async def test_extract_retry_emits_two_attempt_spans(span_exporter: InMemorySpan
     spans = span_exporter.get_finished_spans()
     attempt_spans = [s for s in spans if s.name == "extraction.llm_attempt"]
     assert len(attempt_spans) == 2
-    assert attempt_spans[0].attributes["attempt"] == 1
-    assert attempt_spans[0].attributes["parse_success"] is False
-    assert attempt_spans[1].attributes["attempt"] == 2
-    assert attempt_spans[1].attributes["parse_success"] is True
+    first_attributes = cast(dict[str, object], attempt_spans[0].attributes or {})
+    second_attributes = cast(dict[str, object], attempt_spans[1].attributes or {})
+    assert first_attributes["attempt"] == 1
+    assert first_attributes["parse_success"] is False
+    assert second_attributes["attempt"] == 2
+    assert second_attributes["parse_success"] is True
 
     pipeline_spans = [s for s in spans if s.name == "extraction.pipeline"]
     assert len(pipeline_spans) == 1
@@ -277,7 +347,8 @@ async def test_extract_emits_persist_span(span_exporter: InMemorySpanExporter) -
     spans = span_exporter.get_finished_spans()
     persist_spans = [s for s in spans if s.name == "extraction.persist"]
     assert len(persist_spans) == 1
-    assert persist_spans[0].attributes["tags_saved"] == 2
+    attributes = cast(dict[str, object], persist_spans[0].attributes or {})
+    assert attributes["tags_saved"] == 2
 
 
 @pytest.mark.asyncio

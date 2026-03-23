@@ -14,6 +14,7 @@ from typing import AsyncIterator
 import structlog
 
 from app.core.message_queue import GenerationMessage, MessageQueue
+from app.core.telemetry import record_queue_publish, set_inmemory_queue_depth
 
 logger = structlog.get_logger(__name__)
 
@@ -38,11 +39,14 @@ class InMemoryQueue:
         )
         log.info("inmemory_queue_publish")
         await self._queue.put(message)
+        record_queue_publish("inmemory")
+        set_inmemory_queue_depth(self._queue.qsize())
 
     async def consume(self) -> AsyncIterator[GenerationMessage]:
         """Yield messages indefinitely, blocking when the queue is empty."""
         while True:
             message = await self._queue.get()
+            set_inmemory_queue_depth(self._queue.qsize())
             logger.info(
                 "inmemory_queue_consume",
                 client_id=str(message.client_id),

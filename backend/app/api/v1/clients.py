@@ -23,7 +23,7 @@ async def create_client(
     payload: ClientCreate,
     db: AsyncSession = Depends(get_db),
 ) -> ClientResponse:
-    return await ClientService(db).create(payload)
+    return ClientResponse.model_validate(await ClientService(db).create(payload))
 
 
 @router.get("/{client_id}", response_model=ClientResponse)
@@ -31,7 +31,7 @@ async def get_client(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> ClientResponse:
-    return await ClientService(db).get(client_id)
+    return ClientResponse.model_validate(await ClientService(db).get(client_id))
 
 
 @router.patch("/{client_id}", response_model=ClientResponse)
@@ -40,7 +40,7 @@ async def update_client(
     payload: ClientUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> ClientResponse:
-    return await ClientService(db).update(client_id, payload)
+    return ClientResponse.model_validate(await ClientService(db).update(client_id, payload))
 
 
 @router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

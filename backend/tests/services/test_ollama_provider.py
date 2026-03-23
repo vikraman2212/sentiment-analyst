@@ -3,6 +3,10 @@
 httpx is mocked so no local Ollama server is required.
 """
 
+from __future__ import annotations
+
+from collections.abc import Generator
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -134,7 +138,7 @@ def _make_span_exporter() -> tuple[InMemorySpanExporter, TracerProvider]:
 
 
 @pytest.fixture(autouse=False)
-def span_exporter() -> tuple[InMemorySpanExporter, None]:
+def span_exporter() -> Generator[InMemorySpanExporter, None, None]:
     """Fixture: wire a fresh in-memory exporter into the ollama provider tracer."""
     exporter, provider = _make_span_exporter()
     original = _ollama_mod._tracer
@@ -160,11 +164,12 @@ async def test_complete_emits_llm_complete_span(span_exporter: InMemorySpanExpor
     assert len(spans) == 1
     span = spans[0]
     assert span.name == "llm.complete"
-    assert span.attributes["gen_ai.system"] == "ollama"
-    assert span.attributes["gen_ai.request.model"] == "llama3.2"
-    assert span.attributes["gen_ai.usage.prompt_tokens"] == 10
-    assert span.attributes["gen_ai.usage.completion_tokens"] == 5
-    assert span.attributes["gen_ai.usage.total_tokens"] == 15
+    attrs = cast(dict[str, object], span.attributes or {})
+    assert attrs["gen_ai.system"] == "ollama"
+    assert attrs["gen_ai.request.model"] == "llama3.2"
+    assert attrs["gen_ai.usage.prompt_tokens"] == 10
+    assert attrs["gen_ai.usage.completion_tokens"] == 5
+    assert attrs["gen_ai.usage.total_tokens"] == 15
 
 
 @pytest.mark.asyncio
@@ -225,7 +230,8 @@ async def test_complete_prompt_capture_disabled_by_default(
         await OllamaProvider(_BASE_URL, _TIMEOUT).complete("Secret prompt", model="llama3.2")
 
     span = span_exporter.get_finished_spans()[0]
-    assert "gen_ai.prompt" not in (span.attributes or {})
+    attrs = cast(dict[str, object], span.attributes or {})
+    assert "gen_ai.prompt" not in attrs
 
 
 @pytest.mark.asyncio
@@ -248,4 +254,5 @@ async def test_complete_prompt_capture_enabled(
         await OllamaProvider(_BASE_URL, _TIMEOUT).complete("My prompt", model="llama3.2")
 
     span = span_exporter.get_finished_spans()[0]
-    assert span.attributes.get("gen_ai.prompt") == "My prompt"
+    attrs = cast(dict[str, object], span.attributes or {})
+    assert attrs.get("gen_ai.prompt") == "My prompt"

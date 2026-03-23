@@ -15,10 +15,12 @@ For each ``GenerationMessage`` delivered by the queue it:
 from __future__ import annotations
 
 import asyncio
+from time import perf_counter
 
 import structlog
 
 from app.core.message_queue import MessageQueue
+from app.core.telemetry import record_worker_run
 from app.db.session import AsyncSessionLocal
 from app.dependencies.queue import get_queue
 from app.repositories.generation_failure import GenerationFailureRepository
@@ -65,6 +67,8 @@ class GenerationWorker:
             if not self._running:
                 break
 
+            started_at = perf_counter()
+            status = "error"
             log = logger.bind(
                 client_id=str(message.client_id),
                 message_id=message.message_id,
@@ -78,6 +82,7 @@ class GenerationWorker:
                     await svc.generate(message.client_id, message.trigger_type)
 
                 await self._queue.ack(message.message_id)
+                status = "success"
                 log.info("generation_worker_success")
 
             except Exception as exc:
@@ -107,3 +112,8 @@ class GenerationWorker:
                         exc_info=True,
                     )
                 # Continue the loop — do not let a single failure crash the worker.
+            finally:
+                record_worker_run(
+                    status=status,
+                    duration_seconds=perf_counter() - started_at,
+                )

@@ -34,7 +34,7 @@ async def create_message_draft(
     payload: MessageDraftCreate,
     db: AsyncSession = Depends(get_db),
 ) -> MessageDraftResponse:
-    return await MessageDraftService(db).create(payload)
+    return MessageDraftResponse.model_validate(await MessageDraftService(db).create(payload))
 
 
 @router.get(
@@ -45,7 +45,8 @@ async def list_client_message_drafts(
     client_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> list[MessageDraftResponse]:
-    return await MessageDraftService(db).list_by_client(client_id)
+    drafts = await MessageDraftService(db).list_by_client(client_id)
+    return [MessageDraftResponse.model_validate(d) for d in drafts]
 
 
 @router.patch(
@@ -57,4 +58,4 @@ async def update_draft_status(
     payload: MessageDraftStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> MessageDraftResponse:
-    return await MessageDraftService(db).update_status(draft_id, payload)
+    return MessageDraftResponse.model_validate(await MessageDraftService(db).update_status(draft_id, payload))

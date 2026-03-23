@@ -7,9 +7,9 @@ helpers for server-side download and deletion used by the transcription pipeline
 import tempfile
 from pathlib import Path
 
-import aioboto3
+import aioboto3  # type: ignore[import-untyped]
 import structlog
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 from app.core.config import settings
 
