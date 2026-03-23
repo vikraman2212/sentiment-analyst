@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import MagicMock, patch
 
-import pytest
 import structlog
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -17,8 +16,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from app.core.middleware import RequestCorrelationMiddleware, _REQUEST_ID_HEADER
-
+from app.core.middleware import _REQUEST_ID_HEADER, RequestCorrelationMiddleware
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -118,6 +116,9 @@ def test_structlog_context_includes_trace_ids_when_span_active() -> None:
         TestClient(app).get("/")
 
     assert "trace_id" in captured
+    assert "span_id" in captured
+    assert captured["trace_id"] == format(0xABCD1234ABCD1234ABCD1234ABCD1234, "032x")
+    assert captured["span_id"] == format(0x1234ABCD1234ABCD, "016x")
     assert "span_id" in captured
     assert captured["trace_id"] == format(0xABCD1234ABCD1234ABCD1234ABCD1234, "032x")
     assert captured["span_id"] == format(0x1234ABCD1234ABCD, "016x")
