@@ -124,6 +124,56 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: sentiment-backend
+    restart: unless-stopped
+    profiles:
+      - backend
+    # Run migrations then start the API server.
+    # set -e ensures the container exits immediately if alembic fails.
+    command: >
+      sh -c "set -e;
+             alembic upgrade head &&
+             uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-localpassword}@postgres:5432/${POSTGRES_DB:-advisor_db}
+      OPENSEARCH_URL: http://opensearch:9200
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-audio-uploads}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_EXTRACTION_MODEL: ${OLLAMA_EXTRACTION_MODEL:-llama3.2}
+      OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-llama3.2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base.en}
+      SCHEDULER_SECRET: ${SCHEDULER_SECRET:-change-me-in-production}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-http://jaeger:4318}
+    extra_hosts:
+      # Allows the container to reach Ollama running on the host machine.
+      # On macOS/Windows with Docker Desktop, host.docker.internal resolves automatically;
+      # this entry ensures Linux hosts also work.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 volumes:
   pgdata:
   osdata:
