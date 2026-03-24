@@ -22,7 +22,10 @@ final _testClients = [
 
 Widget _buildApp({required List<Override> overrides}) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: [
+      advisorIdProvider.overrideWith((_) async => null),
+      ...overrides,
+    ],
     child: const MaterialApp(home: Scaffold(body: CaptureScreen())),
   );
 }
@@ -38,7 +41,7 @@ void main() {
     testWidgets('shows loading spinner while clients load', (tester) async {
       final completer = Completer<List<Client>>();
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenAnswer((_) => completer.future);
 
       await tester.pumpWidget(
@@ -57,7 +60,7 @@ void main() {
 
     testWidgets('shows client list after load', (tester) async {
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenAnswer((_) async => _testClients);
 
       await tester.pumpWidget(
@@ -74,7 +77,7 @@ void main() {
 
     testWidgets('search filters client list', (tester) async {
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenAnswer((_) async => _testClients);
 
       await tester.pumpWidget(
@@ -94,7 +97,7 @@ void main() {
 
     testWidgets('shows error state with retry button', (tester) async {
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenThrow(Exception('network error'));
 
       await tester.pumpWidget(
@@ -112,7 +115,7 @@ void main() {
       'record button shows "Select a client first" when none selected',
       (tester) async {
         when(
-          () => mockApiService.getClients(),
+          () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
         ).thenAnswer((_) async => _testClients);
 
         await tester.pumpWidget(
@@ -130,7 +133,7 @@ void main() {
       tester,
     ) async {
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenAnswer((_) async => _testClients);
 
       await tester.pumpWidget(
@@ -156,7 +159,7 @@ void main() {
       tester,
     ) async {
       when(
-        () => mockApiService.getClients(),
+        () => mockApiService.getClients(advisorId: any(named: 'advisorId')),
       ).thenAnswer((_) async => _testClients);
 
       await tester.pumpWidget(

@@ -12,8 +12,8 @@ class CaptureScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          const ClientPicker(),
-          const Spacer(),
+          const Expanded(child: ClientPicker()),
+          const SizedBox(height: 24),
           const RecordButton(),
           const SizedBox(height: 48),
         ],

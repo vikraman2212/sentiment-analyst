@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     SCHEDULER_HOUR: int = 8  # 24-hour clock; when to fire the daily generation job
     SCHEDULER_SECRET: str = "change-me-in-production"  # X-Scheduler-Secret header
 
+    # MinIO event notifications
+    # Sent by MinIO as the Authorization header to authenticate webhook calls.
+    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"
+
     # Message queue
     QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"
     REDIS_URL: str = "redis://localhost:6379"
@@ -45,9 +49,11 @@ class Settings(BaseSettings):
     OTEL_ENABLED: bool = False  # Set True to activate tracing and metrics export
     OTEL_SERVICE_NAME: str = "sentiment-analyst-backend"
     OTEL_ENDPOINT: str = "http://localhost:4318"  # OTLP HTTP collector endpoint
-    OTEL_LLM_CAPTURE_PROMPTS: bool = False  # Set True to include prompt text in LLM spans (disabled by default)
+    OTEL_LLM_CAPTURE_PROMPTS: bool = False
+    # Set True to include prompt text in LLM spans (disabled by default)
 
-    # Prompt overrides — set to a non-empty string to replace the built-in prompt at runtime
+    # Prompt overrides — set to a non-empty string to replace the built-in
+    # prompt at runtime
     EXTRACTION_PROMPT_OVERRIDE: str = ""
     GENERATION_PROMPT_OVERRIDE: str = ""
 

@@ -58,4 +58,5 @@ async def update_draft_status(
     payload: MessageDraftStatusUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> MessageDraftResponse:
-    return MessageDraftResponse.model_validate(await MessageDraftService(db).update_status(draft_id, payload))
+    updated = await MessageDraftService(db).update_status(draft_id, payload)
+    return MessageDraftResponse.model_validate(updated)

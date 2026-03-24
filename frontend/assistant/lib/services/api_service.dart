@@ -7,8 +7,14 @@ class ApiService {
 
   ApiService({ApiClient? client}) : _client = client ?? ApiClient();
 
-  Future<List<Client>> getClients() async {
-    final list = await _client.getList('/api/v1/clients');
+  Future<List<Client>> getClients({String? advisorId}) async {
+    final path = Uri(
+      path: '/api/v1/clients/',
+      queryParameters: advisorId != null && advisorId.isNotEmpty
+          ? {'advisor_id': advisorId}
+          : null,
+    ).toString();
+    final list = await _client.getList(path);
     return list.map((e) => Client.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -21,16 +27,6 @@ class ApiService {
       'client_id': clientId,
       'filename': filename,
       'content_type': contentType,
-    });
-  }
-
-  Future<Map<String, dynamic>> processAudio({
-    required String clientId,
-    required String objectKey,
-  }) async {
-    return _client.post('/api/v1/audio/process', {
-      'client_id': clientId,
-      'object_key': objectKey,
     });
   }
 

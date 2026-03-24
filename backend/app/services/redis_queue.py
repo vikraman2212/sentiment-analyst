@@ -17,7 +17,7 @@ rather than stopping the consumer loop.
 from __future__ import annotations
 
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import redis.asyncio as aioredis
 import structlog

@@ -16,8 +16,6 @@ import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.core.llm_provider import LLMResult
 from app.services.extraction import ExtractionService
 
@@ -190,7 +188,6 @@ async def test_invalid_categories_are_skipped() -> None:
 
 def test_extraction_prompt_override_is_used_when_set() -> None:
     """When EXTRACTION_PROMPT_OVERRIDE is non-empty it replaces the default."""
-    import importlib
 
     import app.core.prompts as prompts_module
 

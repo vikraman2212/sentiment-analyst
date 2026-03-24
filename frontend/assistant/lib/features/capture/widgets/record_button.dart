@@ -84,11 +84,7 @@ class _RecordButtonState extends ConsumerState<RecordButton>
       ref.read(recordingStateProvider.notifier).state = RecordingState.done;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✓ Captured (${result.extractedTagsCount} tags extracted)',
-            ),
-          ),
+          SnackBar(content: Text('Upload complete: ${result.objectKey}')),
         );
       }
     } catch (e) {

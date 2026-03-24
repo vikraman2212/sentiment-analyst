@@ -25,9 +25,11 @@ from app.core.config import settings
 # ---------------------------------------------------------------------------
 
 _DEFAULT_EXTRACTION_PROMPT_TEMPLATE = """\
-You are an AI assistant helping a financial advisor extract structured notes from a client meeting transcript.
+You are an AI assistant helping a financial advisor extract structured notes
+from a client meeting transcript.
 
-Analyse the transcript below and extract context items. Return ONLY a JSON object in this exact format:
+Analyse the transcript below and extract context items. Return ONLY a JSON
+object in this exact format:
 {{
   "tags": [
     {{"category": "<category>", "content": "<concise note>"}},
@@ -63,7 +65,8 @@ EXTRACTION_PROMPT_TEMPLATE: str = (
 _DEFAULT_GENERATION_SYSTEM_PROMPT = """\
 You are an AI assistant helping a financial advisor write personalised client emails.
 
-Write a warm, professional email body for the advisor to send to the client named in the profile below.
+Write a warm, professional email body for the advisor to send to the client
+named in the profile below.
 
 Rules:
 - Maximum 4 sentences.

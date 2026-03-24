@@ -10,8 +10,9 @@ Concrete implementations live in ``app/services/``.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @dataclass

@@ -15,7 +15,6 @@ import pytest
 from app.schemas.message_draft import PendingDraftResponse
 from app.services.message_draft_service import MessageDraftService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

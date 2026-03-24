@@ -12,11 +12,16 @@ class MockApiService extends Mock implements ApiService {}
 void main() {
   testWidgets('App renders bottom navigation', (WidgetTester tester) async {
     final mockApi = MockApiService();
-    when(() => mockApi.getClients()).thenAnswer((_) async => <Client>[]);
+    when(
+      () => mockApi.getClients(advisorId: any(named: 'advisorId')),
+    ).thenAnswer((_) async => <Client>[]);
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [apiServiceProvider.overrideWithValue(mockApi)],
+        overrides: [
+          advisorIdProvider.overrideWith((_) async => null),
+          apiServiceProvider.overrideWithValue(mockApi),
+        ],
         child: const App(),
       ),
     );

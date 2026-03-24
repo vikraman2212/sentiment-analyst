@@ -17,7 +17,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 import app.services.context_assembly as _context_assembly_mod
 from app.core.exceptions import NotFoundError
 from app.services.context_assembly import ContextAssemblyService
-
 from tests.services.conftest import make_span_exporter
 
 # ---------------------------------------------------------------------------

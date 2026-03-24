@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.client import Client
 
 
 class FinancialProfile(Base):
@@ -14,7 +20,7 @@ class FinancialProfile(Base):
         primary_key=True, default=uuid.uuid4
     )
     client_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, unique=True
+        ForeignKey("client.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     total_aum: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2), nullable=True
@@ -24,7 +30,4 @@ class FinancialProfile(Base):
     )
     risk_profile: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    client: Mapped["Client"] = relationship(back_populates="financial_profile")
-
-
-from app.models.client import Client  # noqa: E402
+    client: Mapped[Client] = relationship(back_populates="financial_profile")

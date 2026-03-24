@@ -16,10 +16,7 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.core.llm_provider import LLMResult
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -105,7 +102,7 @@ async def test_generation_service_forwards_system_prompt() -> None:
             new=MagicMock(log=AsyncMock()),
         ),
     ):
-        result = await service.generate(mock_draft.client_id, "review_due")
+        await service.generate(mock_draft.client_id, "review_due")
 
     mock_provider.complete.assert_awaited_once()
     _, kwargs = mock_provider.complete.call_args

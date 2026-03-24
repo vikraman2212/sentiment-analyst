@@ -1,7 +1,7 @@
 """FastAPI application factory and global exception handlers."""
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import structlog
 from fastapi import FastAPI, Request
@@ -9,7 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.exceptions import ConflictError, ExtractionError, GenerationError, LLMProviderError, NotFoundError
+from app.core.exceptions import (
+    ConflictError,
+    ExtractionError,
+    GenerationError,
+    LLMProviderError,
+    NotFoundError,
+)
 from app.core.logging import configure_logging
 from app.core.middleware import RequestCorrelationMiddleware
 from app.core.telemetry import configure_telemetry, register_metrics_endpoint, shutdown_telemetry
@@ -77,6 +83,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         lifespan=_lifespan,
+        redirect_slashes=False,
     )
 
     # Allow all origins — local Wi-Fi Flutter client on same network

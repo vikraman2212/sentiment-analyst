@@ -9,10 +9,8 @@ All service/repository calls are mocked; no database or Ollama needed.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from tests.api.v1.conftest import async_client, make_app_with_router
 
@@ -37,7 +35,7 @@ def _mock_failure() -> MagicMock:
     m.trigger_type = "review_due"
     m.message_id = "msg-001"
     m.error_detail = "Connection refused"
-    m.failed_at = datetime(2026, 3, 23, 8, 0, 0, tzinfo=timezone.utc)
+    m.failed_at = datetime(2026, 3, 23, 8, 0, 0, tzinfo=UTC)
     m.resolved = False
     return m
 

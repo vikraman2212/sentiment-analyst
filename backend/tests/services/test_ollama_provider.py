@@ -12,13 +12,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+import app.services.ollama_provider as _ollama_mod
 from app.core.exceptions import LLMProviderError
 from app.core.llm_provider import LLMResult
 from app.services.ollama_provider import OllamaProvider
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -126,8 +126,6 @@ async def test_complete_missing_token_counts() -> None:
 # Span / tracing tests
 # ---------------------------------------------------------------------------
 
-import app.services.ollama_provider as _ollama_mod
-
 
 def _make_span_exporter() -> tuple[InMemorySpanExporter, TracerProvider]:
     """Return an in-memory span exporter wired to a fresh TracerProvider."""
@@ -192,7 +190,9 @@ async def test_complete_span_events(span_exporter: InMemorySpanExporter) -> None
 
 
 @pytest.mark.asyncio
-async def test_complete_span_error_status_on_http_failure(span_exporter: InMemorySpanExporter) -> None:
+async def test_complete_span_error_status_on_http_failure(
+    span_exporter: InMemorySpanExporter,
+) -> None:
     """HTTP error → span status ERROR and exception recorded."""
     from opentelemetry.trace import StatusCode
 

@@ -4,7 +4,6 @@ All aioboto3 / botocore calls are mocked so no real MinIO or AWS connection
 is required. Tests follow AAA (Arrange → Act → Assert).
 """
 
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +11,6 @@ import pytest
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 
 from app.services.storage import StorageError, StorageService
-
 
 # ---------------------------------------------------------------------------
 # Helpers

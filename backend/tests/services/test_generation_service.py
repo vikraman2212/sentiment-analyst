@@ -5,9 +5,8 @@ MessageDraftService) are mocked so no network or database is required.
 Tests follow AAA (Arrange → Act → Assert).
 """
 
-from collections.abc import Generator
-
 import uuid
+from collections.abc import Generator
 from decimal import Decimal
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,9 +19,7 @@ from app.core.exceptions import GenerationError, LLMProviderError
 from app.core.llm_provider import LLMResult
 from app.schemas.context_assembly import AssembledContext, FinancialSummary
 from app.services.generation_service import GenerationService, _normalize
-
 from tests.services.conftest import get_metric_value, make_span_exporter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -32,7 +29,9 @@ _CLIENT_ID = uuid.uuid4()
 _DRAFT_ID = uuid.uuid4()
 
 
-def _make_assembled_context(prompt_block: str = "## Client Profile\nName: Jane Doe") -> AssembledContext:
+def _make_assembled_context(
+    prompt_block: str = "## Client Profile\nName: Jane Doe",
+) -> AssembledContext:
     return AssembledContext(
         client_id=_CLIENT_ID,
         client_name="Jane Doe",

@@ -287,7 +287,7 @@ class ClientRepository:
 ## 14. Code Quality Rules
 
 - **Type annotations**: required on every function signature and class attribute. No bare `Any`.
-- **Imports**: `isort` order — stdlib → third-party → local app. No wildcard imports.
+- **Imports**: `isort` order — stdlib → third-party → local app. No wildcard imports. All the imports should be on the top of the file.
 - **No magic strings/numbers**: use named constants or `Enum` members from the models.
 - **Docstrings**: Google style, on all public service and repository methods.
 - **Max function length**: 30 lines. Extract helpers or private methods if exceeded.
