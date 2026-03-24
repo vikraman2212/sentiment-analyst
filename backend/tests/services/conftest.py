@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from prometheus_client import REGISTRY  # type: ignore[import-not-found]
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from prometheus_client import REGISTRY  # type: ignore[import-not-found]
 
 
 def make_span_exporter() -> tuple[InMemorySpanExporter, TracerProvider]:

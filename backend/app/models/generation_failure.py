@@ -5,13 +5,19 @@ When ``GenerationWorker`` fails to process a queue message it persists a
 retried or dismissed by an operator via the API.
 """
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.client import Client
 
 
 class GenerationFailure(Base):
@@ -19,7 +25,7 @@ class GenerationFailure(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     client_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("clients.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("client.id", ondelete="CASCADE"), nullable=False
     )
     trigger_type: Mapped[str] = mapped_column(String(100), nullable=False)
     message_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -29,7 +35,4 @@ class GenerationFailure(Base):
     )
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    client: Mapped["Client"] = relationship(back_populates="generation_failures")
-
-
-from app.models.client import Client  # noqa: E402
+    client: Mapped[Client] = relationship(back_populates="generation_failures")

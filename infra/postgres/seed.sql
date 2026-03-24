@@ -55,82 +55,82 @@ ON CONFLICT DO NOTHING;
 -- -----------------------------------------------------------------------------
 INSERT INTO interaction (id, client_id, type, raw_transcript, audio_file_key, created_at) VALUES
   -- Oliver Bennett
-  ('i1000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'voice_memo',
    'Oliver mentioned he is planning to retire in 10 years and wants to start shifting to lower risk assets. He also said his son just started university.',
    NULL, '2025-03-01 09:15:00+00'),
-  ('i1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-000000000001', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-000000000001', 'voice_memo',
    'Follow-up call: Oliver is concerned about recent market volatility. He asked about moving a portion into bonds. Mentioned family holiday to Italy in June.',
    NULL, '2025-03-10 11:00:00+00'),
 
   -- Priya Mehta
-  ('i1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000002', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000002', 'voice_memo',
    'Priya is very interested in ESG investing. She has a high risk tolerance and wants to maximise long-term growth. She runs her own tech consultancy.',
    NULL, '2025-02-14 14:30:00+00'),
-  ('i1000000-0000-0000-0000-000000000004', 'c1000000-0000-0000-0000-000000000002', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000004', 'c1000000-0000-0000-0000-000000000002', 'voice_memo',
    'Priya asked about sector rotation into AI-related stocks. She also mentioned she is expecting a large bonus payout in Q3 and wants to invest it.',
    NULL, '2025-03-05 10:45:00+00'),
 
   -- Thomas Nguyen
-  ('i1000000-0000-0000-0000-000000000005', 'c1000000-0000-0000-0000-000000000003', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000005', 'c1000000-0000-0000-0000-000000000003', 'voice_memo',
    'Thomas is very risk averse. He is close to retirement and wants capital preservation above all. He expressed worry about inflation eating into his savings.',
    NULL, '2025-01-20 16:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000006', 'c1000000-0000-0000-0000-000000000003', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000006', 'c1000000-0000-0000-0000-000000000003', 'voice_memo',
    'Thomas reviewed his fixed income holdings. He is happy with current bond allocation but wants more information on TIPS. Wife recently diagnosed with illness - additional cost concerns.',
    NULL, '2025-02-28 09:30:00+00'),
 
   -- Amelia Okafor
-  ('i1000000-0000-0000-0000-000000000007', 'c1000000-0000-0000-0000-000000000004', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000007', 'c1000000-0000-0000-0000-000000000004', 'voice_memo',
    'Amelia is an entrepreneur with strong cash flows. She wants to diversify into real estate investment trusts. Her business just completed a Series B funding round.',
    NULL, '2025-03-12 13:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000008', 'c1000000-0000-0000-0000-000000000004', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000008', 'c1000000-0000-0000-0000-000000000004', 'voice_memo',
    'Amelia is interested in private equity opportunities. She mentioned wanting to set up a family trust for estate planning purposes.',
    NULL, '2025-03-19 15:30:00+00'),
 
   -- Daniel Kowalski
-  ('i1000000-0000-0000-0000-000000000009', 'c1000000-0000-0000-0000-000000000005', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000009', 'c1000000-0000-0000-0000-000000000005', 'voice_memo',
    'Daniel recently moved to Australia from Poland. He is building his portfolio from scratch and wants a balanced approach. He is keen on international diversification.',
    NULL, '2025-03-08 10:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000010', 'c1000000-0000-0000-0000-000000000005', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000010', 'c1000000-0000-0000-0000-000000000005', 'voice_memo',
    'Daniel asked about currency hedging strategies given his income is partly in EUR. He also expressed interest in index funds for long-term retirement savings.',
    NULL, '2025-03-15 14:00:00+00'),
 
   -- Sofia Andersen
-  ('i1000000-0000-0000-0000-000000000011', 'c1000000-0000-0000-0000-000000000006', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000011', 'c1000000-0000-0000-0000-000000000006', 'voice_memo',
    'Sofia is a school teacher approaching retirement. She wants steady income and is interested in dividend-paying stocks and term deposits.',
    NULL, '2025-01-15 09:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000012', 'c1000000-0000-0000-0000-000000000006', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000012', 'c1000000-0000-0000-0000-000000000006', 'voice_memo',
    'Sofia mentioned she is planning to downsize her home next year. Proceeds from the sale should be reinvested. She is also concerned about aged care costs in future.',
    NULL, '2025-02-20 11:15:00+00'),
 
   -- Marcus Silva
-  ('i1000000-0000-0000-0000-000000000013', 'c1000000-0000-0000-0000-000000000007', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000013', 'c1000000-0000-0000-0000-000000000007', 'voice_memo',
    'Marcus is a high-net-worth individual who runs a logistics firm. He is comfortable with high risk and wants aggressive growth. Has a strong interest in emerging markets.',
    NULL, '2025-02-05 15:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000014', 'c1000000-0000-0000-0000-000000000007', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000014', 'c1000000-0000-0000-0000-000000000007', 'voice_memo',
    'Marcus reviewed his emerging market exposure. He asked about adding cryptocurrency as a small speculative allocation. He mentioned upcoming travel to Brazil for business.',
    NULL, '2025-03-03 13:30:00+00'),
 
   -- Yuki Tanaka
-  ('i1000000-0000-0000-0000-000000000015', 'c1000000-0000-0000-0000-000000000008', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000015', 'c1000000-0000-0000-0000-000000000008', 'voice_memo',
    'Yuki is a software engineer in her mid-30s with a long investment horizon. She wants a growth-oriented portfolio with some tech sector weighting.',
    NULL, '2025-02-10 10:30:00+00'),
-  ('i1000000-0000-0000-0000-000000000016', 'c1000000-0000-0000-0000-000000000008', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000016', 'c1000000-0000-0000-0000-000000000008', 'voice_memo',
    'Yuki mentioned she is planning to buy an investment property in 3 years and needs liquidity planning around that goal.',
    NULL, '2025-03-18 16:00:00+00'),
 
   -- Rachel O'Brien
-  ('i1000000-0000-0000-0000-000000000017', 'c1000000-0000-0000-0000-000000000009', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000017', 'c1000000-0000-0000-0000-000000000009', 'voice_memo',
    'Rachel is a GP with a stable high income. She wants to minimise tax exposure through salary sacrifice and off-market investments. She prefers ethical investing.',
    NULL, '2025-01-28 08:45:00+00'),
-  ('i1000000-0000-0000-0000-000000000018', 'c1000000-0000-0000-0000-000000000009', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000018', 'c1000000-0000-0000-0000-000000000009', 'voice_memo',
    'Rachel reviewed her superannuation strategy. She wants to maximise concessional contributions. She mentioned a potential career move to a private practice.',
    NULL, '2025-03-06 12:00:00+00'),
 
   -- Ethan Patel
-  ('i1000000-0000-0000-0000-000000000019', 'c1000000-0000-0000-0000-000000000010', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000019', 'c1000000-0000-0000-0000-000000000010', 'voice_memo',
    'Ethan is a recently retired banker. He wants income-generating assets to supplement his pension. He is moderately conservative and dislikes volatility.',
    NULL, '2025-01-10 10:00:00+00'),
-  ('i1000000-0000-0000-0000-000000000020', 'c1000000-0000-0000-0000-000000000010', 'voice_memo',
+  ('b1000000-0000-0000-0000-000000000020', 'c1000000-0000-0000-0000-000000000010', 'voice_memo',
    'Ethan asked about bond ladder strategies and high-grade corporate bonds. He mentioned plans to travel extensively in retirement and needs reliable monthly cash flow.',
    NULL, '2025-02-25 14:45:00+00')
 ON CONFLICT DO NOTHING;
@@ -140,46 +140,46 @@ ON CONFLICT DO NOTHING;
 -- -----------------------------------------------------------------------------
 INSERT INTO client_context (id, client_id, category, content, source_interaction_id) VALUES
   -- Oliver Bennett
-  ('x1000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'financial_goal',   'Plans to retire in 10 years; targeting capital preservation in final 3 years.',          'i1000000-0000-0000-0000-000000000001'),
-  ('x1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-000000000001', 'family_event',     'Son started university; potential for increased expenses over the next 4 years.',        'i1000000-0000-0000-0000-000000000001'),
-  ('x1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000001', 'personal_interest','Annual family holiday to Italy planned for June.',                                        'i1000000-0000-0000-0000-000000000002'),
+  ('e1000000-0000-0000-0000-000000000001', 'c1000000-0000-0000-0000-000000000001', 'financial_goal',   'Plans to retire in 10 years; targeting capital preservation in final 3 years.',          'b1000000-0000-0000-0000-000000000001'),
+  ('e1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-000000000001', 'family_event',     'Son started university; potential for increased expenses over the next 4 years.',        'b1000000-0000-0000-0000-000000000001'),
+  ('e1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-000000000001', 'personal_interest','Annual family holiday to Italy planned for June.',                                        'b1000000-0000-0000-0000-000000000002'),
 
   -- Priya Mehta
-  ('x1000000-0000-0000-0000-000000000004', 'c1000000-0000-0000-0000-000000000002', 'personal_interest','Strong preference for ESG and sustainable investment products.',                          'i1000000-0000-0000-0000-000000000003'),
-  ('x1000000-0000-0000-0000-000000000005', 'c1000000-0000-0000-0000-000000000002', 'financial_goal',   'Expects large Q3 bonus; plans to invest the full amount.',                               'i1000000-0000-0000-0000-000000000004'),
-  ('x1000000-0000-0000-0000-000000000006', 'c1000000-0000-0000-0000-000000000002', 'risk_tolerance',   'High risk tolerance; comfortable with aggressive growth strategies.',                    'i1000000-0000-0000-0000-000000000003'),
+  ('e1000000-0000-0000-0000-000000000004', 'c1000000-0000-0000-0000-000000000002', 'personal_interest','Strong preference for ESG and sustainable investment products.',                          'b1000000-0000-0000-0000-000000000003'),
+  ('e1000000-0000-0000-0000-000000000005', 'c1000000-0000-0000-0000-000000000002', 'financial_goal',   'Expects large Q3 bonus; plans to invest the full amount.',                               'b1000000-0000-0000-0000-000000000004'),
+  ('e1000000-0000-0000-0000-000000000006', 'c1000000-0000-0000-0000-000000000002', 'risk_tolerance',   'High risk tolerance; comfortable with aggressive growth strategies.',                    'b1000000-0000-0000-0000-000000000003'),
 
   -- Thomas Nguyen
-  ('x1000000-0000-0000-0000-000000000007', 'c1000000-0000-0000-0000-000000000003', 'risk_tolerance',   'Very risk averse; capital preservation is the primary investment objective.',             'i1000000-0000-0000-0000-000000000005'),
-  ('x1000000-0000-0000-0000-000000000008', 'c1000000-0000-0000-0000-000000000003', 'family_event',     'Wife recently diagnosed with illness; anticipates increased medical and care expenses.',  'i1000000-0000-0000-0000-000000000006'),
+  ('e1000000-0000-0000-0000-000000000007', 'c1000000-0000-0000-0000-000000000003', 'risk_tolerance',   'Very risk averse; capital preservation is the primary investment objective.',             'b1000000-0000-0000-0000-000000000005'),
+  ('e1000000-0000-0000-0000-000000000008', 'c1000000-0000-0000-0000-000000000003', 'family_event',     'Wife recently diagnosed with illness; anticipates increased medical and care expenses.',  'b1000000-0000-0000-0000-000000000006'),
 
   -- Amelia Okafor
-  ('x1000000-0000-0000-0000-000000000009', 'c1000000-0000-0000-0000-000000000004', 'financial_goal',   'Interested in REIT exposure to diversify away from business income.',                    'i1000000-0000-0000-0000-000000000007'),
-  ('x1000000-0000-0000-0000-000000000010', 'c1000000-0000-0000-0000-000000000004', 'financial_goal',   'Wants to establish a family trust for estate planning; private equity interest.',        'i1000000-0000-0000-0000-000000000008'),
+  ('e1000000-0000-0000-0000-000000000009', 'c1000000-0000-0000-0000-000000000004', 'financial_goal',   'Interested in REIT exposure to diversify away from business income.',                    'b1000000-0000-0000-0000-000000000007'),
+  ('e1000000-0000-0000-0000-000000000010', 'c1000000-0000-0000-0000-000000000004', 'financial_goal',   'Wants to establish a family trust for estate planning; private equity interest.',        'b1000000-0000-0000-0000-000000000008'),
 
   -- Daniel Kowalski
-  ('x1000000-0000-0000-0000-000000000011', 'c1000000-0000-0000-0000-000000000005', 'personal_interest','Relocated from Poland; values international portfolio diversification.',                  'i1000000-0000-0000-0000-000000000009'),
-  ('x1000000-0000-0000-0000-000000000012', 'c1000000-0000-0000-0000-000000000005', 'financial_goal',   'Partial EUR income; seeks currency hedging and index fund strategy for retirement.',     'i1000000-0000-0000-0000-000000000010'),
+  ('e1000000-0000-0000-0000-000000000011', 'c1000000-0000-0000-0000-000000000005', 'personal_interest','Relocated from Poland; values international portfolio diversification.',                  'b1000000-0000-0000-0000-000000000009'),
+  ('e1000000-0000-0000-0000-000000000012', 'c1000000-0000-0000-0000-000000000005', 'financial_goal',   'Partial EUR income; seeks currency hedging and index fund strategy for retirement.',     'b1000000-0000-0000-0000-000000000010'),
 
   -- Sofia Andersen
-  ('x1000000-0000-0000-0000-000000000013', 'c1000000-0000-0000-0000-000000000006', 'financial_goal',   'Plans to downsize home next year; sale proceeds to be reinvested for income.',           'i1000000-0000-0000-0000-000000000012'),
-  ('x1000000-0000-0000-0000-000000000014', 'c1000000-0000-0000-0000-000000000006', 'risk_tolerance',   'Conservative; prefers dividend stocks and term deposits for steady retirement income.',  'i1000000-0000-0000-0000-000000000011'),
+  ('e1000000-0000-0000-0000-000000000013', 'c1000000-0000-0000-0000-000000000006', 'financial_goal',   'Plans to downsize home next year; sale proceeds to be reinvested for income.',           'b1000000-0000-0000-0000-000000000012'),
+  ('e1000000-0000-0000-0000-000000000014', 'c1000000-0000-0000-0000-000000000006', 'risk_tolerance',   'Conservative; prefers dividend stocks and term deposits for steady retirement income.',  'b1000000-0000-0000-0000-000000000011'),
 
   -- Marcus Silva
-  ('x1000000-0000-0000-0000-000000000015', 'c1000000-0000-0000-0000-000000000007', 'risk_tolerance',   'High risk tolerance; strong preference for emerging market exposure.',                   'i1000000-0000-0000-0000-000000000013'),
-  ('x1000000-0000-0000-0000-000000000016', 'c1000000-0000-0000-0000-000000000007', 'personal_interest','Frequent business travel; currently expanding operations into Brazil.',                  'i1000000-0000-0000-0000-000000000014'),
+  ('e1000000-0000-0000-0000-000000000015', 'c1000000-0000-0000-0000-000000000007', 'risk_tolerance',   'High risk tolerance; strong preference for emerging market exposure.',                   'b1000000-0000-0000-0000-000000000013'),
+  ('e1000000-0000-0000-0000-000000000016', 'c1000000-0000-0000-0000-000000000007', 'personal_interest','Frequent business travel; currently expanding operations into Brazil.',                  'b1000000-0000-0000-0000-000000000014'),
 
   -- Yuki Tanaka
-  ('x1000000-0000-0000-0000-000000000017', 'c1000000-0000-0000-0000-000000000008', 'financial_goal',   'Saving to purchase an investment property in approximately 3 years.',                   'i1000000-0000-0000-0000-000000000016'),
-  ('x1000000-0000-0000-0000-000000000018', 'c1000000-0000-0000-0000-000000000008', 'personal_interest','Works in software engineering; interested in tech-sector-weighted growth portfolio.',    'i1000000-0000-0000-0000-000000000015'),
+  ('e1000000-0000-0000-0000-000000000017', 'c1000000-0000-0000-0000-000000000008', 'financial_goal',   'Saving to purchase an investment property in approximately 3 years.',                   'b1000000-0000-0000-0000-000000000016'),
+  ('e1000000-0000-0000-0000-000000000018', 'c1000000-0000-0000-0000-000000000008', 'personal_interest','Works in software engineering; interested in tech-sector-weighted growth portfolio.',    'b1000000-0000-0000-0000-000000000015'),
 
   -- Rachel O'Brien
-  ('x1000000-0000-0000-0000-000000000019', 'c1000000-0000-0000-0000-000000000009', 'financial_goal',   'Maximising concessional super contributions; considering move to private practice.',     'i1000000-0000-0000-0000-000000000018'),
-  ('x1000000-0000-0000-0000-000000000020', 'c1000000-0000-0000-0000-000000000009', 'personal_interest','Strong preference for ethical and ESG-aligned investments.',                             'i1000000-0000-0000-0000-000000000017'),
+  ('e1000000-0000-0000-0000-000000000019', 'c1000000-0000-0000-0000-000000000009', 'financial_goal',   'Maximising concessional super contributions; considering move to private practice.',     'b1000000-0000-0000-0000-000000000018'),
+  ('e1000000-0000-0000-0000-000000000020', 'c1000000-0000-0000-0000-000000000009', 'personal_interest','Strong preference for ethical and ESG-aligned investments.',                             'b1000000-0000-0000-0000-000000000017'),
 
   -- Ethan Patel
-  ('x1000000-0000-0000-0000-000000000021', 'c1000000-0000-0000-0000-000000000010', 'financial_goal',   'Requires reliable monthly income from portfolio to supplement pension in retirement.',  'i1000000-0000-0000-0000-000000000019'),
-  ('x1000000-0000-0000-0000-000000000022', 'c1000000-0000-0000-0000-000000000010', 'personal_interest','Plans extensive international travel post-retirement; needs liquid, income-generating assets.', 'i1000000-0000-0000-0000-000000000020')
+  ('e1000000-0000-0000-0000-000000000021', 'c1000000-0000-0000-0000-000000000010', 'financial_goal',   'Requires reliable monthly income from portfolio to supplement pension in retirement.',  'b1000000-0000-0000-0000-000000000019'),
+  ('e1000000-0000-0000-0000-000000000022', 'c1000000-0000-0000-0000-000000000010', 'personal_interest','Plans extensive international travel post-retirement; needs liquid, income-generating assets.', 'b1000000-0000-0000-0000-000000000020')
 ON CONFLICT DO NOTHING;
 
 -- -----------------------------------------------------------------------------

@@ -4,10 +4,9 @@ All external dependencies (LLMProvider, ClientContextRepository) are mocked so
 no network or database is required. Tests follow AAA (Arrange → Act → Assert).
 """
 
-from collections.abc import Generator
-
 import json
 import uuid
+from collections.abc import Generator
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,9 +17,7 @@ import app.services.extraction as _extraction_mod
 from app.core.exceptions import ExtractionError
 from app.core.llm_provider import LLMResult
 from app.services.extraction import ExtractionService
-
 from tests.services.conftest import get_metric_value, make_span_exporter
-
 
 # ---------------------------------------------------------------------------
 # Helpers

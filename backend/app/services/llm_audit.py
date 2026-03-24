@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -42,7 +42,7 @@ class LLMAuditEvent:
     prompt_tokens: int | None
     completion_tokens: int | None
     timestamp: str = dataclasses.field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     error: str | None = None
     trace_id: str | None = None

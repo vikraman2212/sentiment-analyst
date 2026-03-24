@@ -22,7 +22,13 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.semconv.resource import ResourceAttributes
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest  # type: ignore[import-not-found]
+from prometheus_client import (  # type: ignore[import-not-found]
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 from app.core.config import settings
 
@@ -251,7 +257,9 @@ def _build_tracer_provider(resource: Resource) -> TracerProvider:
     Returns:
         A configured TracerProvider ready to be set as the global provider.
     """
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore[import-not-found]
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        OTLPSpanExporter,  # type: ignore[import-not-found]
+    )
 
     exporter = OTLPSpanExporter(endpoint=f"{settings.OTEL_ENDPOINT}/v1/traces")
     provider = TracerProvider(resource=resource)
@@ -268,7 +276,9 @@ def _build_meter_provider(resource: Resource) -> MeterProvider:
     Returns:
         A configured MeterProvider ready to be set as the global provider.
     """
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter  # type: ignore[import-not-found]
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+        OTLPMetricExporter,  # type: ignore[import-not-found]
+    )
 
     exporter = OTLPMetricExporter(endpoint=f"{settings.OTEL_ENDPOINT}/v1/metrics")
     reader = PeriodicExportingMetricReader(exporter)
@@ -282,9 +292,15 @@ def _instrument_libraries() -> None:
     calling this function more than once (e.g., in tests) is safe and will
     not register duplicate spans or metrics.
     """
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
-    from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor  # type: ignore[import-not-found]
-    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor  # type: ignore[import-not-found]
+    from opentelemetry.instrumentation.fastapi import (
+        FastAPIInstrumentor,  # type: ignore[import-not-found]
+    )
+    from opentelemetry.instrumentation.httpx import (
+        HTTPXClientInstrumentor,  # type: ignore[import-not-found]
+    )
+    from opentelemetry.instrumentation.sqlalchemy import (
+        SQLAlchemyInstrumentor,  # type: ignore[import-not-found]
+    )
 
     FastAPIInstrumentor().instrument()
     HTTPXClientInstrumentor().instrument()

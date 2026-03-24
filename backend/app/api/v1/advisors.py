@@ -53,10 +53,14 @@ async def delete_advisor(
     await AdvisorService(db).delete(advisor_id)
 
 
-@router.get("/{advisor_id}/clients", response_model=list[ClientResponse])
+@router.get(
+    "/{advisor_id}/clients",
+    response_model=list[ClientResponse],
+    include_in_schema=False,
+)
 async def list_advisor_clients(
     advisor_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> list[ClientResponse]:
     clients = await ClientService(db).list_by_advisor(advisor_id)
-    return [ClientResponse.model_validate(c) for c in clients]
+    return [ClientResponse.model_validate(client) for client in clients]

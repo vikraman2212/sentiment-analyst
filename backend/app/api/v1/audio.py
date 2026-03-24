@@ -5,20 +5,30 @@ Two-step upload pattern:
      passes through this server.
   2. ``POST /audio/process`` — after the client has PUT the file directly to MinIO,
      the server downloads it, transcribes, and extracts context tags.
+  3. ``POST /audio/webhook`` — MinIO event notification receiver; fires processing
+     as a background task so the response is returned immediately.
 """
 
 import uuid
 from pathlib import Path
+from urllib.parse import unquote
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
 from app.dependencies.db import get_db
 from app.repositories.client import ClientRepository
 from app.repositories.interaction import InteractionRepository
-from app.schemas.audio import AudioUploadResponse, PresignRequest, PresignResponse, ProcessRequest
+from app.schemas.audio import (
+    AudioUploadResponse,
+    MinioWebhookPayload,
+    PresignRequest,
+    PresignResponse,
+    ProcessRequest,
+)
 from app.schemas.interaction import InteractionCreate
 from app.services.extraction import ExtractionError, extraction_service
 from app.services.storage import StorageError, storage_service
@@ -27,6 +37,8 @@ from app.services.transcription import TranscriptionError, transcription_service
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/audio", tags=["audio"])
+
+_AUDIO_EXTENSIONS = frozenset({".webm", ".mp3", ".m4a", ".wav", ".ogg", ".opus", ".mpeg"})
 
 _ALLOWED_CONTENT_TYPES = {
     "audio/mpeg",
@@ -79,7 +91,9 @@ async def request_presigned_url(
     object_key = f"{payload.client_id}/{uuid.uuid4()}{ext}"
 
     try:
-        upload_url = await storage_service.generate_presigned_put_url(object_key, payload.content_type)
+        upload_url = await storage_service.generate_presigned_put_url(
+            object_key, payload.content_type
+        )
     except StorageError as exc:
         log.error("audio_presign_storage_failed", error=exc.detail)
         raise HTTPException(
@@ -180,3 +194,126 @@ async def process_audio(
         extracted_tags_count=extracted_tags_count,
         interaction_id=interaction.id,
     )
+
+
+async def _run_extraction(client_id: uuid.UUID, object_key: str) -> None:
+    """Background task: transcribe and extract context tags for a newly uploaded audio file.
+
+    Creates its own database session (independent of the request lifecycle).
+    Logs and returns on any error — never propagates exceptions to the caller.
+
+    Args:
+        client_id: UUID of the client the recording belongs to.
+        object_key: MinIO object key in the form ``{client_id}/{uuid}.ext``.
+    """
+    log = logger.bind(client_id=str(client_id), object_key=object_key)
+    log.info("webhook_extraction_started")
+
+    async with AsyncSessionLocal() as db:
+        client = await ClientRepository(db).get_by_id(client_id)
+        if client is None:
+            log.warning("webhook_extraction_client_not_found")
+            return
+
+        try:
+            tmp_path = await storage_service.download_to_tempfile(object_key)
+        except StorageError as exc:
+            log.error("webhook_extraction_download_failed", error=exc.detail)
+            return
+
+        try:
+            transcript = await transcription_service.transcribe(tmp_path)
+        except TranscriptionError as exc:
+            log.error("webhook_extraction_transcription_failed", error=exc.detail)
+            return
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+        interaction = await InteractionRepository(db).create(
+            InteractionCreate(
+                client_id=client_id,
+                type="voice_memo",
+                raw_transcript=transcript,
+                audio_file_key=object_key,
+            )
+        )
+        log.info("webhook_extraction_interaction_saved", interaction_id=str(interaction.id))
+
+        try:
+            count = await extraction_service.extract(
+                transcript=transcript,
+                client_id=client_id,
+                interaction_id=interaction.id,
+                db=db,
+            )
+            log.info("webhook_extraction_complete", extracted_tags=count)
+        except ExtractionError as exc:
+            log.warning("webhook_extraction_degraded", error=exc.detail)
+
+
+@router.post(
+    "/webhook",
+    status_code=status.HTTP_200_OK,
+    summary="Receive MinIO event notifications and trigger audio processing",
+)
+async def minio_webhook(
+    payload: MinioWebhookPayload,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(None),
+) -> dict[str, str]:
+    """Accept MinIO ``s3:ObjectCreated`` events and queue audio processing.
+
+    MinIO posts a S3-compatible event payload when an object is PUT into the
+    bucket.  The object key format ``{client_id}/{uuid}.ext`` carries the
+    client identity so no additional parameters are needed.
+
+    Processing is dispatched as a ``BackgroundTasks`` task so this endpoint
+    returns immediately, preventing MinIO from timing out and retrying.
+
+    Args:
+        payload: Parsed MinIO event notification body.
+        background_tasks: FastAPI background task registry.
+        authorization: Shared secret sent by MinIO as the ``Authorization`` header.
+
+    Returns:
+        ``{"status": "accepted"}`` once the tasks are queued.
+
+    Raises:
+        403: If the ``Authorization`` header is missing or does not match
+             ``settings.MINIO_WEBHOOK_SECRET``.
+    """
+    log = logger.bind(source="minio_webhook")
+
+    if authorization != settings.MINIO_WEBHOOK_SECRET:
+        log.warning("webhook_unauthorized")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid webhook secret",
+        )
+
+    queued = 0
+    for record in payload.Records:
+        if not record.eventName.startswith("s3:ObjectCreated"):
+            continue
+
+        object_key = unquote(record.s3.object_.key)
+        if Path(object_key).suffix.lower() not in _AUDIO_EXTENSIONS:
+            log.info("webhook_skipped_non_audio", object_key=object_key)
+            continue
+
+        parts = object_key.split("/")
+        if len(parts) < 2:
+            log.warning("webhook_invalid_key_format", object_key=object_key)
+            continue
+
+        try:
+            client_id = uuid.UUID(parts[0])
+        except ValueError:
+            log.warning("webhook_invalid_client_id_in_key", object_key=object_key)
+            continue
+
+        background_tasks.add_task(_run_extraction, client_id, object_key)
+        queued += 1
+        log.info("webhook_task_queued", client_id=str(client_id), object_key=object_key)
+
+    return {"status": "accepted"}

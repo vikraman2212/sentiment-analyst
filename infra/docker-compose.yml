@@ -76,6 +76,12 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      # Webhook notification target — "primary" is the target ID
+      MINIO_NOTIFY_WEBHOOK_ENABLE_primary: "on"
+      # Backend runs on the Docker host; use host.docker.internal to reach it.
+      # Override BACKEND_WEBHOOK_URL in .env if you run the backend inside Docker.
+      MINIO_NOTIFY_WEBHOOK_ENDPOINT_primary: "${BACKEND_WEBHOOK_URL:-http://host.docker.internal:8000}/api/v1/audio/webhook"
+      MINIO_NOTIFY_WEBHOOK_AUTH_TOKEN_primary: "${MINIO_WEBHOOK_SECRET:-change-me-in-production}"
     ports:
       - "9000:9000" # S3-compatible API
       - "9001:9001" # Web console
@@ -86,6 +92,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # One-shot init: subscribe the audio bucket to the webhook target on first boot.
+  minio-init:
+    image: minio/mc:latest
+    container_name: sentiment-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} &&
+        mc mb --ignore-existing myminio/$${MINIO_BUCKET:-audio-uploads} &&
+        mc event add myminio/$${MINIO_BUCKET:-audio-uploads} arn:minio:sqs::primary:webhook --event s3:ObjectCreated:* || true &&
+        echo 'MinIO bucket notification configured'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-audio-uploads}
+
 
   # Observability — trace ingestion and query UI
   jaeger:

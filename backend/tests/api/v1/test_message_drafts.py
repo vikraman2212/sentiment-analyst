@@ -9,8 +9,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from tests.api.v1.conftest import async_client, make_app_with_router
 
 _CLIENT_ID = uuid.uuid4()

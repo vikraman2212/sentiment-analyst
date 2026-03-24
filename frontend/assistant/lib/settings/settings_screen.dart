@@ -1,27 +1,40 @@
 import 'package:flutter/material.dart';
-import '../core/config.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class SettingsScreen extends StatefulWidget {
+import '../core/config.dart';
+import '../providers/capture_providers.dart';
+
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
-  final _controller = TextEditingController();
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  final _baseUrlController = TextEditingController();
+  final _advisorIdController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _saved = false;
 
   @override
   void initState() {
     super.initState();
-    getBaseUrl().then((url) => setState(() => _controller.text = url));
+    Future.wait([getBaseUrl(), getAdvisorId()]).then((values) {
+      if (!mounted) return;
+      setState(() {
+        final baseUrl = values[0];
+        final advisorId = values[1];
+        _baseUrlController.text = baseUrl is String ? baseUrl : '';
+        _advisorIdController.text = advisorId is String ? advisorId : '';
+      });
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _baseUrlController.dispose();
+    _advisorIdController.dispose();
     super.dispose();
   }
 
@@ -38,10 +51,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return null;
   }
 
+  String? _validateAdvisorId(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final parsed = Uri.tryParse('scheme://host/$trimmed');
+    final uuidPattern = RegExp(
+      r'^[0-9a-fA-F]{8}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{4}-'
+      r'[0-9a-fA-F]{12}$',
+    );
+    if (parsed == null || !uuidPattern.hasMatch(trimmed)) {
+      return 'Enter a valid advisor UUID or leave blank';
+    }
+    return null;
+  }
+
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    final url = _controller.text.trim();
+    final url = _baseUrlController.text.trim();
+    final advisorId = _advisorIdController.text.trim();
     await setBaseUrl(url);
+    await setAdvisorId(advisorId.isEmpty ? null : advisorId);
+    ref.invalidate(advisorIdProvider);
+    ref.invalidate(clientListProvider);
+    ref.read(selectedClientProvider.notifier).state = null;
     if (mounted) setState(() => _saved = true);
   }
 
@@ -60,7 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('API Base URL', style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
               TextFormField(
-                controller: _controller,
+                controller: _baseUrlController,
                 decoration: const InputDecoration(
                   hintText: 'http://192.168.x.x:8000',
                   border: OutlineInputBorder(),
@@ -69,6 +104,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 autocorrect: false,
                 validator: _validateUrl,
                 onChanged: (_) => setState(() => _saved = false),
+              ),
+              const SizedBox(height: 16),
+              Text('Advisor ID', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _advisorIdController,
+                decoration: const InputDecoration(
+                  hintText: 'Leave blank to fetch all clients',
+                  border: OutlineInputBorder(),
+                ),
+                autocorrect: false,
+                validator: _validateAdvisorId,
+                onChanged: (_) => setState(() => _saved = false),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Leave this empty to load every client. Set it only when you '
+                'want the capture screen filtered to one advisor.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               const SizedBox(height: 16),
               ElevatedButton(onPressed: _save, child: const Text('Save')),

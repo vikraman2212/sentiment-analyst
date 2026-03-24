@@ -10,7 +10,11 @@ from app.models.message_draft import MessageDraft
 from app.repositories.client import ClientRepository
 from app.repositories.message_draft import MessageDraftRepository
 from app.schemas.client_context import ClientContextResponse
-from app.schemas.message_draft import MessageDraftCreate, MessageDraftStatusUpdate, PendingDraftResponse
+from app.schemas.message_draft import (
+    MessageDraftCreate,
+    MessageDraftStatusUpdate,
+    PendingDraftResponse,
+)
 
 logger = structlog.get_logger(__name__)
 

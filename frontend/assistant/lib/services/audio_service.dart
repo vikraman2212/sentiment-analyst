@@ -1,4 +1,7 @@
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import '../core/api_client.dart';
@@ -6,13 +9,9 @@ import '../core/exceptions.dart';
 import 'api_service.dart';
 
 class AudioUploadResult {
-  final String interactionId;
-  final int extractedTagsCount;
+  final String objectKey;
 
-  const AudioUploadResult({
-    required this.interactionId,
-    required this.extractedTagsCount,
-  });
+  const AudioUploadResult({required this.objectKey});
 }
 
 class AudioService {
@@ -25,22 +24,27 @@ class AudioService {
     AudioRecorder? recorder,
     ApiService? apiService,
     ApiClient? apiClient,
-  })  : _recorder = recorder ?? AudioRecorder(),
-        _apiService = apiService ?? ApiService(),
-        _apiClient = apiClient ?? ApiClient();
+  }) : _recorder = recorder ?? AudioRecorder(),
+       _apiService = apiService ?? ApiService(),
+       _apiClient = apiClient ?? ApiClient();
 
   Future<void> startRecording() async {
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       throw const RecordingException('microphone_permission_denied');
     }
+
+    if (kIsWeb) {
+      _tempFilePath =
+          'recording_${DateTime.now().millisecondsSinceEpoch}.$_recordingExtension';
+      await _recorder.start(_recordConfig, path: _tempFilePath!);
+      return;
+    }
+
     final dir = await getTemporaryDirectory();
     _tempFilePath =
-        '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc),
-      path: _tempFilePath!,
-    );
+        '${dir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.$_recordingExtension';
+    await _recorder.start(_recordConfig, path: _tempFilePath!);
   }
 
   Future<AudioUploadResult> stopAndUpload(String clientId) async {
@@ -48,35 +52,52 @@ class AudioService {
     if (localPath == null) {
       throw const RecordingException('recording_not_started');
     }
-    final file = File(localPath);
+
     try {
       // Step 1: presign
       final presign = await _apiService.presignUpload(
         clientId: clientId,
-        filename: 'recording.m4a',
-        contentType: 'audio/m4a',
+        filename: 'recording.$_recordingExtension',
+        contentType: _recordingContentType,
       );
       final uploadUrl = presign['upload_url'] as String;
       final objectKey = presign['object_key'] as String;
 
       // Step 2: PUT to MinIO
-      final bytes = await file.readAsBytes();
-      await _apiClient.putBytes(uploadUrl, bytes, 'audio/m4a');
+      final bytes = await _readRecordedBytes(localPath);
+      await _apiClient.putBytes(uploadUrl, bytes, _recordingContentType);
 
-      // Step 3: process
-      final result =
-          await _apiService.processAudio(clientId: clientId, objectKey: objectKey);
-      return AudioUploadResult(
-        interactionId: result['interaction_id'] as String,
-        extractedTagsCount: result['extracted_tags_count'] as int,
-      );
+      return AudioUploadResult(objectKey: objectKey);
     } finally {
-      if (await file.exists()) {
-        await file.delete();
+      if (!kIsWeb && localPath.isNotEmpty) {
+        final file = File(localPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
       }
       _tempFilePath = null;
     }
   }
+
+  Future<Uint8List> _readRecordedBytes(String localPath) async {
+    if (kIsWeb) {
+      final response = await http.get(Uri.parse(localPath));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw const RecordingException('recording_blob_read_failed');
+      }
+      return response.bodyBytes;
+    }
+
+    return File(localPath).readAsBytes();
+  }
+
+  RecordConfig get _recordConfig => kIsWeb
+      ? const RecordConfig(encoder: AudioEncoder.opus)
+      : const RecordConfig(encoder: AudioEncoder.aacLc);
+
+  String get _recordingContentType => kIsWeb ? 'audio/webm' : 'audio/m4a';
+
+  String get _recordingExtension => kIsWeb ? 'webm' : 'm4a';
 
   void dispose() {
     _recorder.dispose();

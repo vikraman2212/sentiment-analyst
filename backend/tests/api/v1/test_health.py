@@ -8,11 +8,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from httpx import ASGITransport, AsyncClient
-
-from app.core.middleware import _REQUEST_ID_HEADER
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,7 +33,10 @@ def _make_test_app():
 
 async def test_liveness_returns_200() -> None:
     """GET /health returns 200 with status ok."""
-    async with AsyncClient(transport=ASGITransport(app=_make_test_app()), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=_make_test_app()),
+        base_url="http://test",
+    ) as client:
         response = await client.get("/health")
 
     assert response.status_code == 200

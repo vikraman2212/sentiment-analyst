@@ -10,7 +10,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from app.dependencies.db import get_db
@@ -26,6 +25,8 @@ def make_app_with_router(router, *, include_exception_handlers: bool = True) -> 
     app = FastAPI()
 
     if include_exception_handlers:
+        from fastapi.responses import JSONResponse
+
         from app.core.exceptions import (
             ConflictError,
             ExtractionError,
@@ -33,7 +34,6 @@ def make_app_with_router(router, *, include_exception_handlers: bool = True) -> 
             LLMProviderError,
             NotFoundError,
         )
-        from fastapi.responses import JSONResponse
 
         @app.exception_handler(NotFoundError)
         async def _not_found(request, exc):

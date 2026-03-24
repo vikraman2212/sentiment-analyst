@@ -136,7 +136,10 @@ class ExtractionService:
 
                 if tags is None:
                     log.warning("extraction_retry", reason="invalid_json_first_attempt")
-                    pipeline_span.add_event("extraction.retry", {"reason": "invalid_json_first_attempt"})
+                    pipeline_span.add_event(
+                        "extraction.retry",
+                        {"reason": "invalid_json_first_attempt"},
+                    )
                     with _tracer.start_as_current_span("extraction.llm_attempt") as attempt_span:
                         attempt_span.set_attribute("attempt", 2)
                         result2 = await self._provider.complete(prompt, format="json", model=model)
@@ -144,8 +147,16 @@ class ExtractionService:
                         attempt_span.set_attribute("parse_success", tags is not None)
                         _llm_status = "success" if tags is not None else "error"
                         _span_ctx = attempt_span.get_span_context()
-                        _trace_id = format(_span_ctx.trace_id, "032x") if _span_ctx.is_valid else None
-                        _span_id = format(_span_ctx.span_id, "016x") if _span_ctx.is_valid else None
+                        _trace_id = (
+                            format(_span_ctx.trace_id, "032x")
+                            if _span_ctx.is_valid
+                            else None
+                        )
+                        _span_id = (
+                            format(_span_ctx.span_id, "016x")
+                            if _span_ctx.is_valid
+                            else None
+                        )
                         record_llm_metrics(
                             pipeline="extraction",
                             model=model,
