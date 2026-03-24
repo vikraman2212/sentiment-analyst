@@ -38,8 +38,7 @@ class Settings(BaseSettings):
     SCHEDULER_SECRET: str = "change-me-in-production"  # X-Scheduler-Secret header
 
     # MinIO event notifications
-    # Sent by MinIO as the Authorization header to authenticate webhook calls.
-    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"
+    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"  # X-Minio-Webhook-Secret / Authorization header
 
     # Message queue
     QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"

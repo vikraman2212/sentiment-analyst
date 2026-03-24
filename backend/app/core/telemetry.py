@@ -16,7 +16,6 @@ from fastapi import FastAPI, Response
 from opentelemetry import metrics, trace
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -268,7 +267,11 @@ def _build_tracer_provider(resource: Resource) -> TracerProvider:
 
 
 def _build_meter_provider(resource: Resource) -> MeterProvider:
-    """Build a MeterProvider with a PeriodicExportingMetricReader backed by OTLP HTTP.
+    """Build a MeterProvider without an OTLP push exporter.
+
+    Metrics are exposed for Prometheus scraping via the ``/metrics`` endpoint
+    (``prometheus_client``).  Jaeger only accepts traces on the OTLP port, so
+    OTLP metric export is intentionally omitted.
 
     Args:
         resource: OTel Resource describing this service instance.
@@ -276,13 +279,7 @@ def _build_meter_provider(resource: Resource) -> MeterProvider:
     Returns:
         A configured MeterProvider ready to be set as the global provider.
     """
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
-        OTLPMetricExporter,  # type: ignore[import-not-found]
-    )
-
-    exporter = OTLPMetricExporter(endpoint=f"{settings.OTEL_ENDPOINT}/v1/metrics")
-    reader = PeriodicExportingMetricReader(exporter)
-    return MeterProvider(resource=resource, metric_readers=[reader])
+    return MeterProvider(resource=resource)
 
 
 def _instrument_libraries() -> None:
