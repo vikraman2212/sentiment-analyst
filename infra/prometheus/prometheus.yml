@@ -4,10 +4,9 @@ global:
 
 scrape_configs:
   - job_name: sentiment-backend
-    # When the backend runs inside Compose (the default), it is reachable on the
-    # shared Docker network by its service name.  If you run the backend on the
-    # host instead, replace "backend" with "host.docker.internal".
+    # Backend runs on the host machine; host.docker.internal resolves from inside
+    # Docker on both macOS/Windows (Docker Desktop) and Linux.
     static_configs:
       - targets:
-          - backend:8000
+          - host.docker.internal:8000
     metrics_path: /metrics

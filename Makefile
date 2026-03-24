@@ -6,10 +6,15 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs stack-up stack-down stack-logs stack-migrate seed-db backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs dev-up stack-up stack-down stack-logs stack-migrate seed-db backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d --force-recreate minio-init
+
+# Start infrastructure then the host backend in one command.
+# Ctrl-C stops the backend; run make infra-down separately to tear down Docker services.
+dev-up: infra-up backend-run
 
 infra-down:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example down
@@ -49,6 +54,7 @@ backend-migrate:
 	cd $(BACKEND_DIR) && uv run alembic upgrade head
 
 backend-run:
+	@pkill -f "uvicorn app.main" 2>/dev/null || true
 	cd $(BACKEND_DIR) && uv run uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
 
 backend-test:

@@ -100,18 +100,19 @@ services:
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >
         mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin} &&
         mc mb --ignore-existing myminio/$${MINIO_BUCKET:-audio-uploads} &&
-        mc event add myminio/$${MINIO_BUCKET:-audio-uploads} arn:minio:sqs::primary:webhook --event s3:ObjectCreated:* || true &&
-        echo 'MinIO bucket notification configured'
-      "
+        mc event add myminio/$${MINIO_BUCKET:-audio-uploads} arn:minio:sqs::primary:webhook --event put --ignore-existing &&
+        echo 'MinIO bucket notification configured' &&
+        mc event list myminio/$${MINIO_BUCKET:-audio-uploads}
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-audio-uploads}
-
 
   # Observability — trace ingestion and query UI
   jaeger:
@@ -122,8 +123,8 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686" # Jaeger UI
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:16686/ || exit 1"]
       interval: 15s
