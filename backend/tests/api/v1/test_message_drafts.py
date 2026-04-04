@@ -1,6 +1,6 @@
 """API contract tests for the message_drafts router.
 
-Covers: list pending, create draft, list by client, update status.
+Covers: list pending, list by client, update status.
 All service calls are mocked; no database required.
 """
 
@@ -72,32 +72,6 @@ async def test_list_pending_drafts_returns_empty_list() -> None:
 
     assert response.status_code == 200
     assert response.json() == []
-
-
-# ---------------------------------------------------------------------------
-# POST /message-drafts/
-# ---------------------------------------------------------------------------
-
-
-async def test_create_message_draft_returns_201() -> None:
-    """POST /message-drafts/ returns 201 with the created draft."""
-    app = _make_app()
-    with patch("app.api.v1.message_drafts.MessageDraftService") as mock_svc_cls:
-        mock_svc_cls.return_value.create = AsyncMock(return_value=_mock_draft())
-        async with async_client(app) as client:
-            response = await client.post(
-                "/message-drafts/",
-                json={
-                    "client_id": str(_CLIENT_ID),
-                    "trigger_type": "review_due",
-                    "generated_content": "Hi John, your portfolio looks great.",
-                },
-            )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["client_id"] == str(_CLIENT_ID)
-    assert body["status"] == "pending"
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@ import pytest
 
 from app.core.message_queue import GenerationMessage
 from app.services.inmemory_queue import InMemoryQueue
-from tests.services.conftest import get_metric_value
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,38 +85,6 @@ async def test_round_trip_preserves_trace_context() -> None:
 
     assert received is not None
     assert received.trace_context == trace_ctx
-
-
-@pytest.mark.asyncio
-async def test_publish_increments_queue_depth_and_consume_decrements_it() -> None:
-    """Queue depth gauge increases on publish and returns to baseline after consume."""
-    queue = InMemoryQueue()
-    before = get_metric_value("sentiment_inmemory_queue_depth_messages")
-
-    await queue.publish(_make_message())
-
-    assert get_metric_value("sentiment_inmemory_queue_depth_messages") == before + 1
-
-    async for _ in queue.consume():
-        break
-
-    assert get_metric_value("sentiment_inmemory_queue_depth_messages") == before
-
-
-@pytest.mark.asyncio
-async def test_publish_increments_backend_counter() -> None:
-    """publish() increments the inmemory publish counter by one."""
-    queue = InMemoryQueue()
-    before = get_metric_value(
-        "sentiment_queue_messages_published_total", {"backend": "inmemory"}
-    )
-
-    await queue.publish(_make_message())
-
-    assert (
-        get_metric_value("sentiment_queue_messages_published_total", {"backend": "inmemory"})
-        == before + 1
-    )
 
 
 @pytest.mark.asyncio

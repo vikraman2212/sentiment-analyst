@@ -1,54 +1,17 @@
-"""LLM provider abstraction — shared types and protocol.
+"""LLM provider abstraction — re-exported from agent_sdk.
 
-Defines a provider-agnostic interface so that extraction and generation
-pipelines are decoupled from any specific inference backend (Ollama,
-OpenAI, Anthropic).  Concrete implementations live in ``app/services/``.
+All backend modules that import ``LLMResult`` or ``LLMProvider`` from this
+file continue to work without changes.  The canonical definitions live in
+``agent_sdk.core.llm_provider``.
 """
 
-from __future__ import annotations
+from agent_sdk.core.llm_provider import LLMProvider, LLMResult  # noqa: F401
 
-from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+__all__ = ["LLMProvider", "LLMResult"]
 
-
-@dataclass
-class LLMResult:
-    """Provider-agnostic output from a single LLM completion call."""
-
-    response: str
-    prompt: str
-    prompt_tokens: int | None
-    completion_tokens: int | None
-    latency_ms: float
-
-
-@runtime_checkable
-class LLMProvider(Protocol):
-    """Structural interface every LLM backend must satisfy.
-
-    Callers pass the model name and optional parameters per-call so
-    the same provider instance can serve both extraction and generation
-    pipelines with different models.
-    """
-
-    async def complete(
-        self,
-        prompt: str,
-        *,
-        system: str | None = None,
-        format: str | None = None,
-        model: str,
-    ) -> LLMResult:
-        """Send a prompt and return the model's completion.
-
-        Args:
-            prompt: The user/main prompt text.
-            system: Optional system prompt (not all backends support this separately).
-            format: Response format hint — ``"json"`` for structured output, ``None``
-                for free-form text.
-            model: Model identifier (e.g. ``"llama3.2"``, ``"gpt-4o"``).
-
-        Returns:
-            LLMResult with the model's response and telemetry metadata.
-        """
-        ...
+# ---------------------------------------------------------------------------
+# Backward-compatibility note
+# ---------------------------------------------------------------------------
+# The previous in-module definitions are removed.  Code that imports
+# ``from app.core.llm_provider import LLMProvider, LLMResult`` continues
+# to work because the names are re-exported here.

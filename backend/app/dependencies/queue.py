@@ -1,8 +1,9 @@
 """Queue dependency factory.
 
 Returns the correct ``MessageQueue`` implementation based on
-``settings.QUEUE_BACKEND``.  Import ``get_queue`` in services and
-routers that need to interact with the queue.
+``settings.QUEUE_BACKEND``.  Concrete adapters now come from
+``agent_sdk.providers.queue`` so that autonomous agents can share the
+exact same queue implementation without importing ``app.*``.
 
 Usage::
 
@@ -15,9 +16,9 @@ Usage::
 from __future__ import annotations
 
 import structlog
+from agent_sdk.core.message_queue import MessageQueue
 
 from app.core.config import settings
-from app.core.message_queue import MessageQueue
 
 logger = structlog.get_logger(__name__)
 
@@ -46,14 +47,14 @@ def get_queue() -> MessageQueue:
     logger.info("queue_factory_init", backend=backend)
 
     if backend == "inmemory":
-        from app.services.inmemory_queue import InMemoryQueue
+        from agent_sdk.providers.queue.inmemory import InMemoryQueue
 
         _queue_instance = InMemoryQueue()
 
     elif backend == "redis":
-        from app.services.redis_queue import RedisStreamQueue
+        from agent_sdk.providers.queue.redis import RedisStreamQueue
 
-        _queue_instance = RedisStreamQueue()
+        _queue_instance = RedisStreamQueue(redis_url=settings.REDIS_URL)
 
     else:
         raise ValueError(

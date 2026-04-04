@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     SCHEDULER_SECRET: str = "change-me-in-production"  # X-Scheduler-Secret header
 
     # MinIO event notifications
-    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"  # X-Minio-Webhook-Secret / Authorization header
+    # X-Minio-Webhook-Secret / Authorization header
+    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"
 
     # Message queue
     QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"

@@ -1,21 +1,21 @@
 """Unit tests for SchedulerService.
 
-All external dependencies (AdvisorRepository, ContextAssemblyService,
-MessageQueue) are mocked so no network or database is required.
-Tests follow AAA (Arrange → Act → Assert).
+Uses a mock ``IClientSource`` instead of patching internal repos, consistent
+with the port/adaptor architecture.  Tests follow AAA (Arrange -> Act -> Assert).
 """
 
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from agent_sdk.agents.generation.scheduler import SchedulerService
+from agent_sdk.core.message_queue import GenerationMessage
 
-from app.core.message_queue import GenerationMessage
-from app.schemas.context_assembly import AssembledContext, FinancialSummary
-from app.services.scheduler import SchedulerService
+from app.services.scheduler import _on_publish_complete
 from tests.services.conftest import get_metric_value
 
 # ---------------------------------------------------------------------------
@@ -27,31 +27,36 @@ _CLIENT_A = uuid.uuid4()
 _CLIENT_B = uuid.uuid4()
 
 
-def _make_advisor(advisor_id: uuid.UUID = _ADVISOR_ID) -> MagicMock:
-    advisor = MagicMock()
-    advisor.id = advisor_id
-    return advisor
-
-
-def _make_context(client_id: uuid.UUID) -> AssembledContext:
-    return AssembledContext(
-        client_id=client_id,
-        client_name="Test Client",
-        financial_summary=FinancialSummary(
-            total_aum=Decimal("500_000"),
-            ytd_return_pct=Decimal("3.1"),
-            risk_profile="moderate",
-        ),
-        context_tags=[],
-        prompt_block="## Client Profile\nName: Test Client",
-    )
-
-
 def _make_queue() -> AsyncMock:
-    """Return an async mock satisfying the MessageQueue protocol."""
     queue = AsyncMock()
     queue.publish = AsyncMock()
     return queue
+
+
+def _make_client_source(
+    pairs: list[tuple[uuid.UUID, uuid.UUID]],
+) -> AsyncMock:
+    """Return a mock IClientSource returning the given (client_id, advisor_id) pairs."""
+    source = AsyncMock()
+    source.get_eligible_clients = AsyncMock(return_value=pairs)
+    return source
+
+
+@asynccontextmanager
+async def _session_factory() -> AsyncGenerator[AsyncMock, None]:  # type: ignore[return]
+    yield AsyncMock()
+
+
+def _make_svc(
+    client_source: AsyncMock,
+    on_publish_complete: object = None,
+) -> SchedulerService:
+    return SchedulerService(
+        queue=_make_queue(),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+        on_publish_complete=on_publish_complete,  # type: ignore[arg-type]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -62,191 +67,77 @@ def _make_queue() -> AsyncMock:
 @pytest.mark.asyncio
 async def test_publish_happy_path_two_clients() -> None:
     """publish_pending_generations publishes one message per eligible client."""
-    # Arrange
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
+    client_source = _make_client_source(
+        [(_CLIENT_A, _ADVISOR_ID), (_CLIENT_B, _ADVISOR_ID)]
+    )
+    svc = SchedulerService(
+        queue=(queue := _make_queue()),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+        on_publish_complete=_on_publish_complete,
+    )
     before_runs = get_metric_value(
-        "sentiment_scheduler_runs_total",
-        {"status": "success"},
+        "sentiment_scheduler_runs_total", {"status": "success"}
     )
     before_duration = get_metric_value(
-        "sentiment_scheduler_duration_seconds_count",
-        {"status": "success"},
+        "sentiment_scheduler_duration_seconds_count", {"status": "success"}
     )
     before_published = get_metric_value("sentiment_scheduler_messages_published_total")
 
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    published = await svc.publish_pending_generations()
 
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        context_svc = AsyncMock()
-        context_svc.list_needing_review = AsyncMock(
-            return_value=[_make_context(_CLIENT_A), _make_context(_CLIENT_B)]
-        )
-        mock_context_svc_cls.return_value = context_svc
-
-        # Act
-        published = await svc.publish_pending_generations()
-
-    # Assert
     assert published == 2
     assert queue.publish.call_count == 2
-
     calls = queue.publish.call_args_list
     published_ids = {call.args[0].client_id for call in calls}
     assert published_ids == {_CLIENT_A, _CLIENT_B}
-
     for call in calls:
         msg: GenerationMessage = call.args[0]
         assert msg.trigger_type == "review_due"
         assert msg.advisor_id == _ADVISOR_ID
-    assert get_metric_value(
-        "sentiment_scheduler_runs_total",
-        {"status": "success"},
-    ) == before_runs + 1
-    assert get_metric_value(
-        "sentiment_scheduler_duration_seconds_count",
-        {"status": "success"},
-    ) == before_duration + 1
-    assert get_metric_value("sentiment_scheduler_messages_published_total") == before_published + 2
-
-
-@pytest.mark.asyncio
-async def test_publish_no_advisors_returns_zero() -> None:
-    """publish_pending_generations returns 0 and publishes nothing when there are no advisors."""
-    # Arrange
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
-
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService"),
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(return_value=[])
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        # Act
-        published = await svc.publish_pending_generations()
-
-    # Assert
-    assert published == 0
-    queue.publish.assert_not_called()
+    assert (
+        get_metric_value("sentiment_scheduler_runs_total", {"status": "success"})
+        == before_runs + 1
+    )
+    assert (
+        get_metric_value(
+            "sentiment_scheduler_duration_seconds_count", {"status": "success"}
+        )
+        == before_duration + 1
+    )
+    assert (
+        get_metric_value("sentiment_scheduler_messages_published_total")
+        == before_published + 2
+    )
 
 
 @pytest.mark.asyncio
 async def test_publish_no_eligible_clients_returns_zero() -> None:
-    """publish_pending_generations returns 0 when no clients need review."""
-    # Arrange
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
+    """publish_pending_generations returns 0 and publishes nothing when list is empty."""
+    client_source = _make_client_source([])
+    svc = SchedulerService(
+        queue=(queue := _make_queue()),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+    )
 
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+    published = await svc.publish_pending_generations()
 
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        context_svc = AsyncMock()
-        context_svc.list_needing_review = AsyncMock(return_value=[])
-        mock_context_svc_cls.return_value = context_svc
-
-        # Act
-        published = await svc.publish_pending_generations()
-
-    # Assert
     assert published == 0
     queue.publish.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_publish_advisor_failure_continues_to_next() -> None:
-    """A failure for one advisor does not abort publishing for subsequent advisors."""
-    # Arrange
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
-
-    advisor_ok_id = uuid.uuid4()
-    advisor_fail_id = uuid.uuid4()
-
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(
-            return_value=[_make_advisor(advisor_fail_id), _make_advisor(advisor_ok_id)]
-        )
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        # First advisor raises, second succeeds with one client
-        context_svc = AsyncMock()
-        context_svc.list_needing_review = AsyncMock(
-            side_effect=[RuntimeError("DB timeout"), [_make_context(_CLIENT_A)]]
-        )
-        mock_context_svc_cls.return_value = context_svc
-
-        # Act
-        published = await svc.publish_pending_generations()
-
-    # Assert — only the successful advisor's client was published
-    assert published == 1
-    assert queue.publish.call_count == 1
-    msg: GenerationMessage = queue.publish.call_args.args[0]
-    assert msg.client_id == _CLIENT_A
-    assert msg.advisor_id == advisor_ok_id
 
 
 @pytest.mark.asyncio
 async def test_publish_message_has_dict_trace_context_carrier() -> None:
     """Each published GenerationMessage carries a dict trace_context carrier."""
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
+    client_source = _make_client_source([(_CLIENT_A, _ADVISOR_ID)])
+    svc = SchedulerService(
+        queue=(queue := _make_queue()),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+    )
 
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        context_svc = AsyncMock()
-        context_svc.list_needing_review = AsyncMock(return_value=[_make_context(_CLIENT_A)])
-        mock_context_svc_cls.return_value = context_svc
-
-        await svc.publish_pending_generations()
+    await svc.publish_pending_generations()
 
     msg: GenerationMessage = queue.publish.call_args.args[0]
     assert isinstance(msg.trace_context, dict)
@@ -260,29 +151,36 @@ async def test_publish_injects_active_span_into_message_trace_context() -> None:
     _, provider = make_span_exporter()
     tracer = provider.get_tracer(__name__)
 
-    queue = _make_queue()
-    svc = SchedulerService(queue=queue)
+    client_source = _make_client_source([(_CLIENT_A, _ADVISOR_ID)])
+    svc = SchedulerService(
+        queue=(queue := _make_queue()),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+    )
 
-    with (
-        patch("app.services.scheduler.AsyncSessionLocal") as mock_session_cls,
-        patch("app.services.scheduler.AdvisorRepository") as mock_advisor_repo_cls,
-        patch("app.services.scheduler.ContextAssemblyService") as mock_context_svc_cls,
-    ):
-        mock_db = AsyncMock()
-        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        advisor_repo = AsyncMock()
-        advisor_repo.list_all = AsyncMock(return_value=[_make_advisor()])
-        mock_advisor_repo_cls.return_value = advisor_repo
-
-        context_svc = AsyncMock()
-        context_svc.list_needing_review = AsyncMock(return_value=[_make_context(_CLIENT_A)])
-        mock_context_svc_cls.return_value = context_svc
-
-        # Activate a real span so the propagator has something to inject.
-        with tracer.start_as_current_span("test.scheduler.parent"):
-            await svc.publish_pending_generations()
+    with tracer.start_as_current_span("test.scheduler.parent"):
+        await svc.publish_pending_generations()
 
     msg: GenerationMessage = queue.publish.call_args.args[0]
     assert "traceparent" in msg.trace_context
+
+
+@pytest.mark.asyncio
+async def test_publish_on_publish_complete_callback_invoked() -> None:
+    """on_publish_complete callback is called with (status, count, duration)."""
+    mock_cb = MagicMock()
+    client_source = _make_client_source([(_CLIENT_A, _ADVISOR_ID)])
+    svc = SchedulerService(
+        queue=_make_queue(),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        client_source=client_source,
+        on_publish_complete=mock_cb,
+    )
+
+    await svc.publish_pending_generations()
+
+    mock_cb.assert_called_once()
+    status, count, duration = mock_cb.call_args[0]
+    assert status == "success"
+    assert count == 1
+    assert isinstance(duration, float)

@@ -18,6 +18,10 @@ Usage::
 
 from __future__ import annotations
 
+from agent_sdk.agents.generation.prompts import (
+    GENERATION_SYSTEM_PROMPT as _SDK_GENERATION_SYSTEM_PROMPT,
+)
+
 from app.core.config import settings
 
 # ---------------------------------------------------------------------------
@@ -62,24 +66,7 @@ EXTRACTION_PROMPT_TEMPLATE: str = (
 # Generation pipeline
 # ---------------------------------------------------------------------------
 
-_DEFAULT_GENERATION_SYSTEM_PROMPT = """\
-You are an AI assistant helping a financial advisor write personalised client emails.
-
-Write a warm, professional email body for the advisor to send to the client
-named in the profile below.
-
-Rules:
-- Maximum 4 sentences.
-- Refer to portfolio size approximately, rounded to the nearest $100,000 \
-(e.g., "approximately $1.2M") — never print unrounded dollar amounts.
-- Use only facts present in the profile. Do not invent information.
-- Address the client by first name in the opening sentence.
-- Return ONLY the email body text. No subject line, no "Dear ...", \
-no sign-off, no markdown formatting.\
-"""
-
 GENERATION_SYSTEM_PROMPT: str = (
-    settings.GENERATION_PROMPT_OVERRIDE
-    if settings.GENERATION_PROMPT_OVERRIDE.strip()
-    else _DEFAULT_GENERATION_SYSTEM_PROMPT
+    settings.GENERATION_PROMPT_OVERRIDE.strip()
+    or _SDK_GENERATION_SYSTEM_PROMPT
 )

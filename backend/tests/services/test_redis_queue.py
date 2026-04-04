@@ -15,7 +15,6 @@ import pytest
 
 from app.core.message_queue import GenerationMessage
 from app.services.redis_queue import _GROUP_NAME, _STREAM_KEY, RedisStreamQueue
-from tests.services.conftest import get_metric_value
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -50,7 +49,7 @@ async def test_publish_writes_traceparent_to_stream() -> None:
     queue = RedisStreamQueue(redis_url=_REDIS_URL)
     msg = _make_message(trace_context={"traceparent": "00-aabbcc-ddeeff-01"})
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         await queue.publish(msg)
 
     payload = mock_redis.xadd.call_args.args[1]
@@ -66,7 +65,7 @@ async def test_publish_without_trace_context_omits_trace_fields() -> None:
 
     queue = RedisStreamQueue(redis_url=_REDIS_URL)
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         await queue.publish(_make_message())
 
     payload = mock_redis.xadd.call_args.args[1]
@@ -82,30 +81,13 @@ async def test_publish_writes_core_fields_to_stream() -> None:
 
     queue = RedisStreamQueue(redis_url=_REDIS_URL)
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         await queue.publish(_make_message())
 
     payload = mock_redis.xadd.call_args.args[1]
     assert payload["client_id"] == str(_CLIENT_ID)
     assert payload["advisor_id"] == str(_ADVISOR_ID)
     assert payload["trigger_type"] == "review_due"
-
-
-@pytest.mark.asyncio
-async def test_publish_increments_redis_queue_metric() -> None:
-    """publish() increments the redis publish counter by one."""
-    mock_redis = AsyncMock()
-    mock_redis.xadd = AsyncMock(return_value="0-1")
-    before = get_metric_value("sentiment_queue_messages_published_total", {"backend": "redis"})
-
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
-        queue = RedisStreamQueue(redis_url=_REDIS_URL)
-        await queue.publish(_make_message())
-
-    assert (
-        get_metric_value("sentiment_queue_messages_published_total", {"backend": "redis"})
-        == before + 1
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +112,7 @@ async def test_consume_reconstructs_trace_context_from_stream_fields() -> None:
         return_value=[[_STREAM_KEY, [(entry_id, stream_fields)]]]
     )
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         queue = RedisStreamQueue(redis_url=_REDIS_URL)
         received: GenerationMessage | None = None
         async for msg in queue.consume():
@@ -162,7 +144,7 @@ async def test_consume_omits_trace_context_when_fields_absent() -> None:
         return_value=[[_STREAM_KEY, [(entry_id, stream_fields)]]]
     )
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         queue = RedisStreamQueue(redis_url=_REDIS_URL)
         received: GenerationMessage | None = None
         async for msg in queue.consume():
@@ -191,7 +173,7 @@ async def test_consume_skips_empty_poll_and_yields_next_message() -> None:
         ]
     )
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         queue = RedisStreamQueue(redis_url=_REDIS_URL)
         received: GenerationMessage | None = None
         async for msg in queue.consume():
@@ -215,7 +197,7 @@ async def test_ack_calls_xack_with_correct_keys() -> None:
 
     queue = RedisStreamQueue(redis_url=_REDIS_URL)
 
-    with patch("app.services.redis_queue.aioredis.from_url", return_value=mock_redis):
+    with patch("agent_sdk.providers.queue.redis.aioredis.from_url", return_value=mock_redis):
         await queue.ack("1234-0")
 
     mock_redis.xack.assert_called_once_with(_STREAM_KEY, _GROUP_NAME, "1234-0")

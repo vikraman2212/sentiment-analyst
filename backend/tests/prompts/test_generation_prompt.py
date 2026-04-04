@@ -14,7 +14,12 @@ no database or Ollama instance is required.
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from agent_sdk.agents.generation.ports import PromptContext
+from agent_sdk.agents.generation.service import _normalize
+from agent_sdk.core.contracts import AgentTrigger
 
 from app.core.llm_provider import LLMResult
 
@@ -72,37 +77,49 @@ def test_generation_system_prompt_forbids_sign_off() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 async def test_generation_service_forwards_system_prompt() -> None:
-    """GenerationService passes GENERATION_SYSTEM_PROMPT as the system arg."""
+    """GenerationAgent passes GENERATION_SYSTEM_PROMPT as the system arg."""
+    from agent_sdk.agents.generation.service import GenerationAgent
+
     from app.core.prompts import GENERATION_SYSTEM_PROMPT
-    from app.services.generation_service import GenerationService
+
+    client_id = uuid.uuid4()
+    advisor_id = uuid.uuid4()
+    draft_id = uuid.uuid4()
+
+    mock_context_reader = AsyncMock()
+    mock_context_reader.assemble = AsyncMock(
+        return_value=PromptContext(
+            prompt_block="## Client Profile\nName: Sarah",
+            client_name="Sarah",
+        )
+    )
+
+    mock_draft_writer = AsyncMock()
+    mock_draft_writer.find_pending_draft = AsyncMock(return_value=None)
+    mock_draft_writer.create_draft = AsyncMock(return_value=draft_id)
+    mock_draft_writer.delete_draft = AsyncMock()
 
     mock_provider = AsyncMock()
     clean_body = "Hi Sarah, I hope you are well."
     mock_provider.complete = AsyncMock(return_value=_make_result(clean_body))
 
-    mock_db = AsyncMock()
-    service = GenerationService(db=mock_db, provider=mock_provider)
+    agent = GenerationAgent(
+        context_reader=mock_context_reader,
+        draft_writer=mock_draft_writer,
+        provider=mock_provider,
+        system_prompt=GENERATION_SYSTEM_PROMPT,
+    )
 
-    mock_context = MagicMock()
-    mock_context.prompt_block = "## Client Profile\nName: Sarah"
-
-    mock_draft = MagicMock()
-    mock_draft.id = uuid.uuid4()
-    mock_draft.client_id = uuid.uuid4()
-    mock_draft.trigger_type = "review_due"
-    mock_draft.generated_content = clean_body
-
-    with (
-        patch.object(service._context_svc, "assemble", AsyncMock(return_value=mock_context)),
-        patch.object(service._draft_svc, "find_pending_by_client", AsyncMock(return_value=None)),
-        patch.object(service._draft_svc, "create", AsyncMock(return_value=mock_draft)),
-        patch(
-            "app.services.generation_service.llm_audit_logger",
-            new=MagicMock(log=AsyncMock()),
-        ),
-    ):
-        await service.generate(mock_draft.client_id, "review_due")
+    with patch("agent_sdk.agents.generation.service.asyncio.create_task"):
+        await agent.run(
+            AgentTrigger(
+                client_id=client_id,
+                advisor_id=advisor_id,
+                trigger_type="review_due",
+            )
+        )
 
     mock_provider.complete.assert_awaited_once()
     _, kwargs = mock_provider.complete.call_args
@@ -116,8 +133,6 @@ async def test_generation_service_forwards_system_prompt() -> None:
 
 def test_normalize_strips_subject_line() -> None:
     """_normalize removes an accidental 'Subject: ...' line."""
-    from app.services.generation_service import _normalize
-
     raw = "Subject: Your Portfolio Review\nHi Sarah, your portfolio is looking strong."
 
     result = _normalize(raw)
@@ -127,8 +142,6 @@ def test_normalize_strips_subject_line() -> None:
 
 def test_normalize_strips_salutation() -> None:
     """_normalize removes 'Dear <name>,' openings."""
-    from app.services.generation_service import _normalize
-
     raw = "Dear Sarah,\nYour portfolio has grown by 8% this year."
 
     result = _normalize(raw)
@@ -139,8 +152,6 @@ def test_normalize_strips_salutation() -> None:
 
 def test_normalize_strips_sign_off() -> None:
     """_normalize removes 'Warm regards / Sincerely / ...' sign-off blocks."""
-    from app.services.generation_service import _normalize
-
     raw = "Your portfolio is performing well.\n\nWarm regards,\nJohn Advisor"
 
     result = _normalize(raw)

@@ -1,128 +1,90 @@
-"""Generation worker — asynchronous queue consumer.
+"""Generation worker — backend wiring.
 
-Runs as a long-lived ``asyncio`` task started in the FastAPI lifespan.
-For each ``GenerationMessage`` delivered by the queue it:
-
-1. Opens a database session.
-2. Calls ``GenerationService.generate(client_id, trigger_type)``.
-3. Acks the message on success.
-4. Logs the failure and continues on error — the message remains in
-   the pending-entries list (PEL) for Redis Streams, or is simply
-   dropped for the in-memory backend.  The worker never crashes the
-   consumer loop on a per-message failure.
+Re-exports the SDK's ``GenerationWorker`` and provides a
+``create_generation_worker()`` factory that wires it with all
+backend-specific dependencies (adaptors + telemetry).
 """
 
 from __future__ import annotations
 
-import asyncio
-from time import perf_counter
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import structlog
-from opentelemetry import trace
-from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from agent_sdk.agents.generation.worker import GenerationWorker  # noqa: F401
+from agent_sdk.core.message_queue import GenerationMessage
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.message_queue import MessageQueue
-from app.core.telemetry import record_worker_run
+from app.agents.generation.adaptors import ContextAssemblyAdaptor, MessageDraftAdaptor
+from app.core.config import settings
+from app.core.telemetry import record_llm_metrics, record_worker_run
 from app.db.session import AsyncSessionLocal
+from app.dependencies.llm import get_llm_provider
 from app.dependencies.queue import get_queue
 from app.repositories.generation_failure import GenerationFailureRepository
-from app.services.generation_service import GenerationService
 
 logger = structlog.get_logger(__name__)
-_tracer = trace.get_tracer(__name__)
 
 
-class GenerationWorker:
-    """Consumer loop that drains the message queue and calls GenerationService.
+@asynccontextmanager
+async def _session_factory() -> AsyncGenerator[AsyncSession, None]:
+    """Module-level session factory — patchable in tests."""
+    async with AsyncSessionLocal() as session:
+        yield session
 
-    Accepts an injected ``MessageQueue`` for testing; falls back to the
-    factory from ``app/dependencies/queue.py`` when not provided.
-    """
 
-    def __init__(self, queue: MessageQueue | None = None) -> None:
-        self._queue = queue or get_queue()
-        self._running = False
-        self._task: asyncio.Task[None] | None = None
-
-    async def start(self) -> None:
-        """Launch the consumer loop as a background asyncio task."""
-        if self._running:
-            return
-        self._running = True
-        self._task = asyncio.create_task(self._consume_loop(), name="generation-worker")
-        logger.info("generation_worker_started")
-
-    async def stop(self) -> None:
-        """Cancel the consumer loop and wait for it to exit cleanly."""
-        self._running = False
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
-        logger.info("generation_worker_stopped")
-
-    async def _consume_loop(self) -> None:
-        """Inner loop: consume messages and dispatch to GenerationService."""
-        async for message in self._queue.consume():
-            if not self._running:
-                break
-
-            started_at = perf_counter()
-            status = "error"
-            log = logger.bind(
-                client_id=str(message.client_id),
-                message_id=message.message_id,
+async def persist_generation_failure(
+    message: GenerationMessage, error: Exception
+) -> None:
+    """Persist a failed generation message to the dead-letter table."""
+    log = logger.bind(
+        client_id=str(message.client_id),
+        message_id=message.message_id,
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            repo = GenerationFailureRepository(db)
+            await repo.create(
+                client_id=message.client_id,
                 trigger_type=message.trigger_type,
+                message_id=message.message_id,
+                error_detail=str(error),
             )
-            log.info("generation_worker_processing")
+    except Exception as exc:
+        log.error("persist_generation_failure_db_error", error=str(exc), exc_info=True)
 
-            try:
-                _remote_ctx = TraceContextTextMapPropagator().extract(message.trace_context)
-                with _tracer.start_as_current_span(
-                    "generation.worker.process", context=_remote_ctx
-                ) as worker_span:
-                    worker_span.set_attribute("client_id", str(message.client_id))
-                    worker_span.set_attribute("trigger_type", message.trigger_type)
-                    async with AsyncSessionLocal() as db:
-                        svc = GenerationService(db)
-                        await svc.generate(message.client_id, message.trigger_type)
 
-                await self._queue.ack(message.message_id)
-                status = "success"
-                log.info("generation_worker_success")
+def _on_llm_complete(
+    model: str,
+    status: str,
+    duration_seconds: float,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> None:
+    record_llm_metrics(
+        pipeline="generation",
+        model=model,
+        status=status,
+        duration_seconds=duration_seconds,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
 
-            except Exception as exc:
-                log.error(
-                    "generation_worker_failed",
-                    error=str(exc),
-                    exc_info=True,
-                )
-                # Persist to dead-letter table so failures are observable.
-                try:
-                    async with AsyncSessionLocal() as db:
-                        failure_repo = GenerationFailureRepository(db)
-                        failure = await failure_repo.create(
-                            client_id=message.client_id,
-                            trigger_type=message.trigger_type,
-                            message_id=message.message_id,
-                            error_detail=str(exc),
-                        )
-                        log.warning(
-                            "generation_failure_persisted",
-                            failure_id=str(failure.id),
-                        )
-                except Exception as persist_exc:
-                    log.error(
-                        "generation_failure_persist_error",
-                        error=str(persist_exc),
-                        exc_info=True,
-                    )
-                # Continue the loop — do not let a single failure crash the worker.
-            finally:
-                record_worker_run(
-                    status=status,
-                    duration_seconds=perf_counter() - started_at,
-                )
+
+def create_generation_worker() -> GenerationWorker:
+    """Build a fully-wired ``GenerationWorker`` for the backend runtime."""
+    return GenerationWorker(
+        queue=get_queue(),
+        session_factory=_session_factory,  # type: ignore[arg-type]
+        context_reader_factory=ContextAssemblyAdaptor,  # type: ignore[arg-type]
+        draft_writer_factory=MessageDraftAdaptor,  # type: ignore[arg-type]
+        provider=get_llm_provider(),
+        generation_model=settings.OLLAMA_GENERATION_MODEL,
+        system_prompt=settings.GENERATION_PROMPT_OVERRIDE or None,
+        on_run_complete=record_worker_run,
+        on_failure=persist_generation_failure,
+        on_llm_complete=_on_llm_complete,
+    )
+
+
+__all__ = ["GenerationWorker", "create_generation_worker", "persist_generation_failure"]
