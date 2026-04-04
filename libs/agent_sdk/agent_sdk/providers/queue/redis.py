@@ -28,8 +28,8 @@ from agent_sdk.core.message_queue import GenerationMessage, MessageQueue
 
 logger = structlog.get_logger(__name__)
 
-_STREAM_KEY = "sentiment:generation"
-_GROUP_NAME = "generation-worker"
+_DEFAULT_STREAM_KEY = "sentiment:generation"
+_DEFAULT_GROUP_NAME = "generation-worker"
 _CONSUMER_NAME = "worker-0"
 _BLOCK_MS = 5_000   # Block 5 s waiting for new entries before polling again
 _BATCH_SIZE = 1     # Read one message at a time for simplicity
@@ -42,13 +42,30 @@ class RedisStreamQueue:
     call so the instance is safe to ``publish()`` to without calling
     ``consume()`` first.
 
+    Each agent type should use a distinct ``stream_key`` so its consumer
+    group only receives messages published for that agent's topic.
+
     Args:
         redis_url: Redis connection URL
             (e.g. ``"redis://localhost:6379"``).
+        stream_key: Redis stream name.  Defaults to
+            ``"sentiment:generation"``.  Use a different key per agent
+            type to achieve topic isolation
+            (e.g. ``"sentiment:lead_generator"``).
+        group_name: Consumer group name.  Defaults to
+            ``"generation-worker"``.  Override when using a non-default
+            ``stream_key``.
     """
 
-    def __init__(self, redis_url: str = "redis://localhost:6379") -> None:
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379",
+        stream_key: str = _DEFAULT_STREAM_KEY,
+        group_name: str = _DEFAULT_GROUP_NAME,
+    ) -> None:
         self._redis_url = redis_url
+        self._stream_key = stream_key
+        self._group_name = group_name
         self._client: aioredis.Redis | None = None
 
     async def _get_client(self) -> aioredis.Redis:
@@ -64,8 +81,12 @@ class RedisStreamQueue:
         """Create the consumer group if it does not already exist."""
         client = await self._get_client()
         try:
-            await client.xgroup_create(_STREAM_KEY, _GROUP_NAME, id="0", mkstream=True)
-            logger.info("redis_stream_group_created", group=_GROUP_NAME)
+            await client.xgroup_create(self._stream_key, self._group_name, id="0", mkstream=True)
+            logger.info(
+                "redis_stream_group_created",
+                stream=self._stream_key,
+                group=self._group_name,
+            )
         except aioredis.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
@@ -85,10 +106,11 @@ class RedisStreamQueue:
             "schema_version": message.schema_version,
         }
         payload.update(message.trace_context)
-        entry_id: str = await client.xadd(_STREAM_KEY, payload)  # type: ignore[arg-type]
+        entry_id: str = await client.xadd(self._stream_key, payload)  # type: ignore[arg-type]
         message.message_id = entry_id
         logger.info(
             "redis_stream_publish",
+            stream=self._stream_key,
             client_id=str(message.client_id),
             message_id=entry_id,
         )
@@ -106,9 +128,9 @@ class RedisStreamQueue:
 
         while True:
             entries = await client.xreadgroup(
-                _GROUP_NAME,
+                self._group_name,
                 _CONSUMER_NAME,
-                {_STREAM_KEY: ">"},
+                {self._stream_key: ">"},
                 count=_BATCH_SIZE,
                 block=_BLOCK_MS,
             )
@@ -132,6 +154,7 @@ class RedisStreamQueue:
                     )
                     logger.info(
                         "redis_stream_consume",
+                        stream=self._stream_key,
                         client_id=str(msg.client_id),
                         message_id=entry_id,
                     )
@@ -144,8 +167,8 @@ class RedisStreamQueue:
             message_id: The Redis stream entry ID returned on delivery.
         """
         client = await self._get_client()
-        await client.xack(_STREAM_KEY, _GROUP_NAME, message_id)
-        logger.debug("redis_stream_ack", message_id=message_id)
+        await client.xack(self._stream_key, self._group_name, message_id)
+        logger.debug("redis_stream_ack", stream=self._stream_key, message_id=message_id)
 
 
 # Runtime structural Protocol check — fails loudly at import time if the

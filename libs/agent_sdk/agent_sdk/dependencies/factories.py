@@ -63,12 +63,18 @@ def get_llm_provider(config: AgentSDKConfig | None = None) -> LLMProvider:
     )
 
 
-def get_queue(config: AgentSDKConfig | None = None) -> MessageQueue:
+def get_queue(config: AgentSDKConfig | None = None, stream_key: str | None = None) -> MessageQueue:
     """Resolve and return a MessageQueue based on config.
 
     Args:
         config: SDK configuration instance. When ``None`` a new
             ``AgentSDKConfig()`` is constructed from the environment.
+        stream_key: Override the Redis stream key used for topic isolation.
+            Only applies when ``QUEUE_BACKEND`` is ``"redis"``.  When
+            ``None`` the default ``"sentiment:generation"`` stream is used.
+            Pass a distinct key per agent type (e.g.
+            ``"sentiment:lead_generator"``) so agents consume only their
+            own messages.
 
     Returns:
         Concrete ``MessageQueue`` implementation.
@@ -88,7 +94,10 @@ def get_queue(config: AgentSDKConfig | None = None) -> MessageQueue:
     if backend == "redis":
         from agent_sdk.providers.queue.redis import RedisStreamQueue
 
-        return RedisStreamQueue(redis_url=cfg.REDIS_URL)
+        kwargs = {"redis_url": cfg.REDIS_URL}
+        if stream_key is not None:
+            kwargs["stream_key"] = stream_key
+        return RedisStreamQueue(**kwargs)
 
     raise ValueError(
         f"Unsupported QUEUE_BACKEND: {cfg.QUEUE_BACKEND!r}. "
