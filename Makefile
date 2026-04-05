@@ -6,7 +6,7 @@ FRONTEND_DIR := $(ROOT_DIR)/frontend/assistant
 INFRA_DIR := $(ROOT_DIR)/infra
 BACKEND_IMAGE := sentiment-backend:local
 
-.PHONY: infra-up infra-down infra-logs dev-up stack-up stack-down stack-logs stack-migrate seed-db backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
+.PHONY: infra-up infra-down infra-logs dev-up stack-up stack-down stack-logs stack-migrate agents-up agents-down agents-logs seed-db backend-install backend-migrate backend-run backend-test backend-lint backend-typecheck backend-docker-build backend-docker-migrate backend-docker-run backend-docker-stop frontend-install frontend-run frontend-run-web frontend-analyze frontend-test verify
 
 infra-up:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example up -d
@@ -31,6 +31,16 @@ stack-down:
 
 stack-logs:
 	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend logs -f
+
+# Standalone agent containers — infra + backend API + email-agent worker as separate services
+agents-up:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend --profile agents up -d --build
+
+agents-down:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend --profile agents down
+
+agents-logs:
+	docker compose -f $(INFRA_DIR)/docker-compose.yml --env-file $(INFRA_DIR)/.env.example --profile backend --profile agents logs -f
 
 # Run only the Alembic migration step inside the compose network (one-shot container)
 stack-migrate:

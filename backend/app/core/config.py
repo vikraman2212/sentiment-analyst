@@ -61,5 +61,10 @@ class Settings(BaseSettings):
     OLLAMA_MAX_RETRIES: int = 3  # Maximum retry attempts per LLM request
     OLLAMA_BACKOFF_FACTOR: float = 2.0  # Multiplier: waits 1s, 2s, 4s, …
 
+    # Generation worker
+    GENERATION_WORKER_ENABLED: bool = True
+    # Set False when the generation worker runs as a standalone container
+    # (agents Compose profile) to prevent double-consuming from the queue.
+
 
 settings = Settings()  # type: ignore[call-arg]
