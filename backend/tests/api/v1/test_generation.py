@@ -1,9 +1,8 @@
 """API contract tests for the generation router.
 
-Covers: POST /generate (success, NotFoundError, GenerationError)
-and GET /generation/failures (success, empty).
+Covers: GET /generation/failures (success, empty).
 
-All service/repository calls are mocked; no database or Ollama needed.
+All repository calls are mocked; no database or Ollama needed.
 """
 
 from __future__ import annotations
@@ -15,17 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from tests.api.v1.conftest import async_client, make_app_with_router
 
 _CLIENT_ID = uuid.uuid4()
-_DRAFT_ID = uuid.uuid4()
 _FAILURE_ID = uuid.uuid4()
-
-
-def _mock_draft() -> MagicMock:
-    m = MagicMock()
-    m.id = _DRAFT_ID
-    m.client_id = _CLIENT_ID
-    m.trigger_type = "review_due"
-    m.generated_content = "Hi John, your portfolio is performing well."
-    return m
 
 
 def _mock_failure() -> MagicMock:
@@ -43,65 +32,6 @@ def _mock_failure() -> MagicMock:
 def _make_app():
     from app.api.v1.generation import router
     return make_app_with_router(router)
-
-
-# ---------------------------------------------------------------------------
-# POST /generate
-# ---------------------------------------------------------------------------
-
-
-async def test_generate_draft_returns_201() -> None:
-    """POST /generate returns 201 with draft payload on success."""
-    app = _make_app()
-    with patch("app.api.v1.generation.GenerationService") as mock_svc_cls:
-        mock_svc_cls.return_value.generate = AsyncMock(return_value=_mock_draft())
-        async with async_client(app) as client:
-            response = await client.post(
-                "/generate",
-                json={"client_id": str(_CLIENT_ID), "trigger_type": "review_due"},
-            )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["client_id"] == str(_CLIENT_ID)
-    assert body["trigger_type"] == "review_due"
-    assert "generated_content" in body
-
-
-async def test_generate_draft_not_found_returns_404() -> None:
-    """POST /generate returns 404 when the client does not exist."""
-    from app.core.exceptions import NotFoundError
-
-    app = _make_app()
-    with patch("app.api.v1.generation.GenerationService") as mock_svc_cls:
-        mock_svc_cls.return_value.generate = AsyncMock(
-            side_effect=NotFoundError("Client not found")
-        )
-        async with async_client(app) as client:
-            response = await client.post(
-                "/generate",
-                json={"client_id": str(uuid.uuid4()), "trigger_type": "review_due"},
-            )
-
-    assert response.status_code == 404
-
-
-async def test_generate_draft_llm_error_returns_503() -> None:
-    """POST /generate returns 503 when the LLM provider fails."""
-    from app.core.exceptions import LLMProviderError
-
-    app = _make_app()
-    with patch("app.api.v1.generation.GenerationService") as mock_svc_cls:
-        mock_svc_cls.return_value.generate = AsyncMock(
-            side_effect=LLMProviderError("Ollama unreachable")
-        )
-        async with async_client(app) as client:
-            response = await client.post(
-                "/generate",
-                json={"client_id": str(_CLIENT_ID), "trigger_type": "review_due"},
-            )
-
-    assert response.status_code == 503
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.services.scheduler import SchedulerService
+from app.services.scheduler import create_scheduler_service
 
 logger = structlog.get_logger(__name__)
 
@@ -62,7 +62,7 @@ async def trigger_scheduler(
     log = logger.bind(source="http_trigger")
     log.info("scheduler_trigger_received")
 
-    svc = SchedulerService()
+    svc = create_scheduler_service()
     published = await svc.publish_pending_generations()
 
     log.info("scheduler_trigger_complete", messages_published=published)

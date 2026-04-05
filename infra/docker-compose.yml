@@ -1,3 +1,11 @@
+x-app-logging: &app-logging
+  driver: fluentd
+  options:
+    fluentd-address: "127.0.0.1:24224"
+    fluentd-async: "true"
+    fluentd-sub-second-precision: "true"
+    tag: "{{.Name}}"
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -151,6 +159,42 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: sentiment-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fluent-bit:
+    image: fluent/fluent-bit:3.3
+    container_name: sentiment-fluent-bit
+    restart: unless-stopped
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+      - "2020:2020"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -fsS http://localhost:2020/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   backend:
     build:
       context: ../backend
@@ -180,6 +224,9 @@ services:
       SCHEDULER_SECRET: ${SCHEDULER_SECRET:-change-me-in-production}
       OTEL_ENABLED: ${OTEL_ENABLED:-false}
       OTEL_ENDPOINT: ${OTEL_ENDPOINT:-http://jaeger:4318}
+      QUEUE_BACKEND: redis
+      REDIS_URL: redis://redis:6379
+      GENERATION_WORKER_ENABLED: "false"
     extra_hosts:
       # Allows the container to reach Ollama running on the host machine.
       # On macOS/Windows with Docker Desktop, host.docker.internal resolves automatically;
@@ -194,15 +241,54 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      fluent-bit:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 30s
+    logging: *app-logging
+
+  email-agent:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: sentiment-email-agent
+    restart: unless-stopped
+    profiles:
+      - agents
+    command: python -m app.worker_entrypoint
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-localpassword}@postgres:5432/${POSTGRES_DB:-advisor_db}
+      OPENSEARCH_URL: http://opensearch:9200
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_GENERATION_MODEL: ${OLLAMA_GENERATION_MODEL:-llama3.2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      QUEUE_BACKEND: redis
+      REDIS_URL: redis://redis:6379
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-http://jaeger:4318}
+      OTEL_SERVICE_NAME: email-agent
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fluent-bit:
+        condition: service_started
+    logging: *app-logging
 
 volumes:
   pgdata:
   osdata:
   miniodata:
   promdata:
+  redisdata:

@@ -1,0 +1,176 @@
+"""Redis Streams message queue implementation.
+
+Uses Redis Streams with a consumer group for at-least-once delivery and
+proper ack semantics.  Suitable for multi-process and production
+deployments where in-memory delivery is insufficient.
+
+Stream key: ``sentiment:generation``
+Consumer group: ``generation-worker``
+Consumer name: ``worker-0``
+
+Failed messages (nack / unprocessed) are left in the pending-entries list
+(PEL) for external dead-letter handling — the worker logs and continues
+rather than stopping the consumer loop.
+
+This implementation has no dependency on framework telemetry — agents
+and the backend add observability at their own boundary.
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncIterator
+
+import redis.asyncio as aioredis
+import structlog
+
+from agent_sdk.core.message_queue import GenerationMessage, MessageQueue
+
+logger = structlog.get_logger(__name__)
+
+_DEFAULT_STREAM_KEY = "sentiment:generation"
+_DEFAULT_GROUP_NAME = "generation-worker"
+_CONSUMER_NAME = "worker-0"
+_BLOCK_MS = 5_000   # Block 5 s waiting for new entries before polling again
+_BATCH_SIZE = 1     # Read one message at a time for simplicity
+
+
+class RedisStreamQueue:
+    """``MessageQueue`` implementation backed by Redis Streams.
+
+    A consumer group is created (or confirmed) on the first ``consume()``
+    call so the instance is safe to ``publish()`` to without calling
+    ``consume()`` first.
+
+    Each agent type should use a distinct ``stream_key`` so its consumer
+    group only receives messages published for that agent's topic.
+
+    Args:
+        redis_url: Redis connection URL
+            (e.g. ``"redis://localhost:6379"``).
+        stream_key: Redis stream name.  Defaults to
+            ``"sentiment:generation"``.  Use a different key per agent
+            type to achieve topic isolation
+            (e.g. ``"sentiment:lead_generator"``).
+        group_name: Consumer group name.  Defaults to
+            ``"generation-worker"``.  Override when using a non-default
+            ``stream_key``.
+    """
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379",
+        stream_key: str = _DEFAULT_STREAM_KEY,
+        group_name: str = _DEFAULT_GROUP_NAME,
+    ) -> None:
+        self._redis_url = redis_url
+        self._stream_key = stream_key
+        self._group_name = group_name
+        self._client: aioredis.Redis | None = None
+
+    async def _get_client(self) -> aioredis.Redis:
+        if self._client is None:
+            self._client = aioredis.from_url(  # type: ignore[no-untyped-call]
+                self._redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        return self._client
+
+    async def _ensure_group(self) -> None:
+        """Create the consumer group if it does not already exist."""
+        client = await self._get_client()
+        try:
+            await client.xgroup_create(self._stream_key, self._group_name, id="0", mkstream=True)
+            logger.info(
+                "redis_stream_group_created",
+                stream=self._stream_key,
+                group=self._group_name,
+            )
+        except aioredis.ResponseError as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def publish(self, message: GenerationMessage) -> None:
+        """Append a generation message to the Redis stream.
+
+        Args:
+            message: Work item to enqueue. ``message_id`` is set in-place
+                to the Redis stream entry ID assigned on ``XADD``.
+        """
+        client = await self._get_client()
+        payload: dict[str, str] = {
+            "client_id": str(message.client_id),
+            "advisor_id": str(message.advisor_id),
+            "trigger_type": message.trigger_type,
+            "schema_version": message.schema_version,
+        }
+        payload.update(message.trace_context)
+        entry_id: str = await client.xadd(self._stream_key, payload)  # type: ignore[arg-type]
+        message.message_id = entry_id
+        logger.info(
+            "redis_stream_publish",
+            stream=self._stream_key,
+            client_id=str(message.client_id),
+            message_id=entry_id,
+        )
+
+    async def consume(self) -> AsyncIterator[GenerationMessage]:
+        """Yield messages from the consumer group, blocking between polls.
+
+        Ensures the consumer group exists before the first read.
+
+        Yields:
+            ``GenerationMessage`` instances deserialized from the stream.
+        """
+        await self._ensure_group()
+        client = await self._get_client()
+
+        while True:
+            entries = await client.xreadgroup(
+                self._group_name,
+                _CONSUMER_NAME,
+                {self._stream_key: ">"},
+                count=_BATCH_SIZE,
+                block=_BLOCK_MS,
+            )
+            if not entries:
+                continue
+
+            for _stream, messages in entries:
+                for entry_id, fields in messages:
+                    trace_ctx: dict[str, str] = {}
+                    if "traceparent" in fields:
+                        trace_ctx["traceparent"] = fields["traceparent"]
+                    if "tracestate" in fields:
+                        trace_ctx["tracestate"] = fields["tracestate"]
+                    msg = GenerationMessage(
+                        client_id=uuid.UUID(fields["client_id"]),
+                        advisor_id=uuid.UUID(fields["advisor_id"]),
+                        trigger_type=fields["trigger_type"],
+                        message_id=entry_id,
+                        trace_context=trace_ctx,
+                        schema_version=fields.get("schema_version", "1.0"),
+                    )
+                    logger.info(
+                        "redis_stream_consume",
+                        stream=self._stream_key,
+                        client_id=str(msg.client_id),
+                        message_id=entry_id,
+                    )
+                    yield msg
+
+    async def ack(self, message_id: str) -> None:
+        """Acknowledge successful processing so the PEL entry is removed.
+
+        Args:
+            message_id: The Redis stream entry ID returned on delivery.
+        """
+        client = await self._get_client()
+        await client.xack(self._stream_key, self._group_name, message_id)
+        logger.debug("redis_stream_ack", stream=self._stream_key, message_id=message_id)
+
+
+# Runtime structural Protocol check — fails loudly at import time if the
+# class drifts from the MessageQueue Protocol signature.
+_: MessageQueue = RedisStreamQueue()

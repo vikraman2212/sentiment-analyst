@@ -51,6 +51,14 @@ _ALLOWED_CONTENT_TYPES = {
     "audio/ogg",
 }
 
+def _is_valid_webhook_secret(value: str | None) -> bool:
+    """Return True when a webhook auth header matches the configured secret."""
+    if not value:
+        return False
+
+    candidate = value.removeprefix("Bearer ").removeprefix("bearer ")
+    return candidate == settings.MINIO_WEBHOOK_SECRET
+
 
 @router.post(
     "/presign",
@@ -260,6 +268,7 @@ async def minio_webhook(
     payload: MinioWebhookPayload,
     background_tasks: BackgroundTasks,
     authorization: str | None = Header(None),
+    x_minio_webhook_secret: str | None = Header(None, alias="X-Minio-Webhook-Secret"),
 ) -> dict[str, str]:
     """Accept MinIO ``s3:ObjectCreated`` events and queue audio processing.
 
@@ -274,17 +283,22 @@ async def minio_webhook(
         payload: Parsed MinIO event notification body.
         background_tasks: FastAPI background task registry.
         authorization: Shared secret sent by MinIO as the ``Authorization`` header.
+        x_minio_webhook_secret: Alternate shared-secret header supported by some
+            MinIO deployments.
 
     Returns:
         ``{"status": "accepted"}`` once the tasks are queued.
 
     Raises:
-        403: If the ``Authorization`` header is missing or does not match
+        403: If neither webhook secret header matches
              ``settings.MINIO_WEBHOOK_SECRET``.
     """
     log = logger.bind(source="minio_webhook")
 
-    if authorization != settings.MINIO_WEBHOOK_SECRET:
+    if not any(
+        _is_valid_webhook_secret(value)
+        for value in (authorization, x_minio_webhook_secret)
+    ):
         log.warning("webhook_unauthorized")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -9,16 +9,16 @@ from collections.abc import Generator
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import agent_sdk.providers.llm.ollama as _ollama_mod
 import httpx
 import pytest
+from agent_sdk.providers.llm.ollama import OllamaProvider
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-import app.services.ollama_provider as _ollama_mod
 from app.core.exceptions import LLMProviderError
 from app.core.llm_provider import LLMResult
-from app.services.ollama_provider import OllamaProvider
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -51,7 +51,7 @@ async def test_complete_returns_llm_result() -> None:
         "eval_count": 20,
     }
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -73,7 +73,7 @@ async def test_complete_sends_system_prompt() -> None:
     provider = OllamaProvider(_BASE_URL, _TIMEOUT)
     ollama_body = {"response": "ok", "prompt_eval_count": 10, "eval_count": 5}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -91,10 +91,10 @@ async def test_complete_sends_system_prompt() -> None:
 
 @pytest.mark.asyncio
 async def test_complete_http_error_raises_llm_provider_error() -> None:
-    """httpx.HTTPError → LLMProviderError."""
-    provider = OllamaProvider(_BASE_URL, _TIMEOUT)
+    """httpx.HTTPError → LLMProviderError (max_retries=0 to skip backoff)."""
+    provider = OllamaProvider(_BASE_URL, _TIMEOUT, max_retries=0)
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -110,7 +110,7 @@ async def test_complete_missing_token_counts() -> None:
     provider = OllamaProvider(_BASE_URL, _TIMEOUT)
     ollama_body = {"response": "answer"}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -150,7 +150,7 @@ async def test_complete_emits_llm_complete_span(span_exporter: InMemorySpanExpor
     """Happy path: a single ``llm.complete`` span is recorded."""
     ollama_body = {"response": "ok", "prompt_eval_count": 10, "eval_count": 5}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -175,7 +175,7 @@ async def test_complete_span_events(span_exporter: InMemorySpanExporter) -> None
     """Span contains request-started and response-received events."""
     ollama_body = {"response": "ok", "prompt_eval_count": 5, "eval_count": 3}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -196,14 +196,15 @@ async def test_complete_span_error_status_on_http_failure(
     """HTTP error → span status ERROR and exception recorded."""
     from opentelemetry.trace import StatusCode
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
         mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
         with pytest.raises(LLMProviderError):
-            await OllamaProvider(_BASE_URL, _TIMEOUT).complete("Hi", model="llama3.2")
+            provider = OllamaProvider(_BASE_URL, _TIMEOUT, max_retries=0)
+            await provider.complete("Hi", model="llama3.2")
 
     span = span_exporter.get_finished_spans()[0]
     assert span.status.status_code == StatusCode.ERROR
@@ -212,16 +213,12 @@ async def test_complete_span_error_status_on_http_failure(
 
 @pytest.mark.asyncio
 async def test_complete_prompt_capture_disabled_by_default(
-    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+    span_exporter: InMemorySpanExporter,
 ) -> None:
-    """gen_ai.prompt attribute must NOT be set when capture is disabled."""
-    import app.core.config as cfg_mod
-
-    monkeypatch.setattr(cfg_mod.settings, "OTEL_LLM_CAPTURE_PROMPTS", False)
-
+    """gen_ai.prompt attribute must NOT be set when provider uses default capture_prompts=False."""
     ollama_body = {"response": "ok", "prompt_eval_count": 5, "eval_count": 3}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -236,22 +233,20 @@ async def test_complete_prompt_capture_disabled_by_default(
 
 @pytest.mark.asyncio
 async def test_complete_prompt_capture_enabled(
-    span_exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
+    span_exporter: InMemorySpanExporter,
 ) -> None:
-    """gen_ai.prompt attribute IS set when capture is explicitly enabled."""
-    import app.core.config as cfg_mod
-
-    monkeypatch.setattr(cfg_mod.settings, "OTEL_LLM_CAPTURE_PROMPTS", True)
-
+    """gen_ai.prompt attribute IS set when provider is constructed with capture_prompts=True."""
     ollama_body = {"response": "ok", "prompt_eval_count": 5, "eval_count": 3}
 
-    with patch("app.services.ollama_provider.httpx.AsyncClient") as mock_cls:
+    with patch("agent_sdk.providers.llm.ollama.httpx.AsyncClient") as mock_cls:
         mock_http = AsyncMock()
         mock_http.post = AsyncMock(return_value=_make_httpx_response(ollama_body))
         mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
         mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        await OllamaProvider(_BASE_URL, _TIMEOUT).complete("My prompt", model="llama3.2")
+        await OllamaProvider(_BASE_URL, _TIMEOUT, capture_prompts=True).complete(
+            "My prompt", model="llama3.2"
+        )
 
     span = span_exporter.get_finished_spans()[0]
     attrs = cast(dict[str, object], span.attributes or {})

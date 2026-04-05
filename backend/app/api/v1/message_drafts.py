@@ -1,11 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
 from app.schemas.message_draft import (
-    MessageDraftCreate,
     MessageDraftResponse,
     MessageDraftStatusUpdate,
     PendingDraftResponse,
@@ -23,18 +22,6 @@ async def list_pending_drafts(
     db: AsyncSession = Depends(get_db),
 ) -> list[PendingDraftResponse]:
     return await MessageDraftService(db).list_all_pending()
-
-
-@router.post(
-    "/message-drafts/",
-    response_model=MessageDraftResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_message_draft(
-    payload: MessageDraftCreate,
-    db: AsyncSession = Depends(get_db),
-) -> MessageDraftResponse:
-    return MessageDraftResponse.model_validate(await MessageDraftService(db).create(payload))
 
 
 @router.get(

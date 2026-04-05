@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     SCHEDULER_SECRET: str = "change-me-in-production"  # X-Scheduler-Secret header
 
     # MinIO event notifications
-    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"  # X-Minio-Webhook-Secret / Authorization header
+    # X-Minio-Webhook-Secret / Authorization header
+    MINIO_WEBHOOK_SECRET: str = "change-me-in-production"
 
     # Message queue
     QUEUE_BACKEND: str = "inmemory"  # "inmemory" | "redis"
@@ -59,6 +60,11 @@ class Settings(BaseSettings):
     # Ollama retry / backoff
     OLLAMA_MAX_RETRIES: int = 3  # Maximum retry attempts per LLM request
     OLLAMA_BACKOFF_FACTOR: float = 2.0  # Multiplier: waits 1s, 2s, 4s, …
+
+    # Generation worker
+    GENERATION_WORKER_ENABLED: bool = True
+    # Set False when the generation worker runs as a standalone container
+    # (agents Compose profile) to prevent double-consuming from the queue.
 
 
 settings = Settings()  # type: ignore[call-arg]

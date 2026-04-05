@@ -11,8 +11,6 @@ from __future__ import annotations
 import uuid
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from tests.api.v1.conftest import async_client, make_app_with_router
 
 _CLIENT_ID = uuid.uuid4()
@@ -99,6 +97,46 @@ async def test_webhook_wrong_secret_returns_403() -> None:
             )
 
     assert response.status_code == 403
+
+
+async def test_webhook_bearer_token_returns_accepted() -> None:
+    """Bearer-prefixed webhook secrets are accepted."""
+    app = _make_app()
+
+    with (
+        patch("app.core.config.settings.MINIO_WEBHOOK_SECRET", _SECRET),
+        patch("app.api.v1.audio._run_extraction", new_callable=AsyncMock) as mock_extract,
+    ):
+        async with async_client(app) as client:
+            response = await client.post(
+                "/audio/webhook",
+                json=_webhook_payload(),
+                headers={"Authorization": f"Bearer {_SECRET}"},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    mock_extract.assert_awaited_once_with(_CLIENT_ID, _OBJECT_KEY)
+
+
+async def test_webhook_x_minio_secret_header_returns_accepted() -> None:
+    """X-Minio-Webhook-Secret is accepted as an alternate auth header."""
+    app = _make_app()
+
+    with (
+        patch("app.core.config.settings.MINIO_WEBHOOK_SECRET", _SECRET),
+        patch("app.api.v1.audio._run_extraction", new_callable=AsyncMock) as mock_extract,
+    ):
+        async with async_client(app) as client:
+            response = await client.post(
+                "/audio/webhook",
+                json=_webhook_payload(),
+                headers={"X-Minio-Webhook-Secret": _SECRET},
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "accepted"}
+    mock_extract.assert_awaited_once_with(_CLIENT_ID, _OBJECT_KEY)
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,12 @@
 
 These are raised by services and repositories; routers translate them into
 HTTP responses via the global exception handlers registered in ``app/main.py``.
+
+``LLMProviderError`` is re-exported from ``agent_sdk`` so that SDK providers
+(e.g. OllamaProvider) and backend routers share the same exception class.
 """
+
+from agent_sdk.core.exceptions import LLMProviderError  # noqa: F401
 
 
 class NotFoundError(Exception):
@@ -25,14 +30,6 @@ class ExtractionError(Exception):
     """Raised when Ollama fails to return valid structured JSON after retries."""
 
     def __init__(self, detail: str = "Extraction failed") -> None:
-        self.detail = detail
-        super().__init__(detail)
-
-
-class LLMProviderError(Exception):
-    """Raised when the LLM provider HTTP call fails (timeout, connection, 5xx)."""
-
-    def __init__(self, detail: str = "LLM provider request failed") -> None:
         self.detail = detail
         super().__init__(detail)
 

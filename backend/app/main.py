@@ -39,20 +39,22 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await ensure_llm_audits_index()
 
-    # Start the generation worker consumer.
-    from app.services.generation_worker import GenerationWorker
+    # Start the generation worker consumer (disabled when running as standalone agent).
+    worker = None
+    if settings.GENERATION_WORKER_ENABLED:
+        from app.services.generation_worker import create_generation_worker
 
-    worker = GenerationWorker()
-    await worker.start()
+        worker = create_generation_worker()
+        await worker.start()
 
     # Start APScheduler for the daily generation fan-out (local / on-prem).
     from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-not-found]
     from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-not-found]
 
-    from app.services.scheduler import SchedulerService
+    from app.services.scheduler import create_scheduler_service
 
     async def _daily_job() -> None:
-        await SchedulerService().publish_pending_generations()
+        await create_scheduler_service().publish_pending_generations()
 
     scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
     scheduler.add_job(
@@ -71,7 +73,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
     scheduler.shutdown(wait=False)
-    await worker.stop()
+    if worker is not None:
+        await worker.stop()
     shutdown_telemetry()
 
 
